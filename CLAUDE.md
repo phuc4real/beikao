@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-The MVP is **implemented and green** — Vite + React + TS SPA with a fully-tested game engine, host-authoritative PeerJS networking, and the Home/Lobby/Game UI. `npm run build`, `npm run lint`, and `npm run test` (36 tests) all pass.
+The MVP **plus Phase 2** is implemented and green — Vite + React + TS SPA with a fully-tested game engine, host-authoritative PeerJS networking, and the Home/Lobby/Game UI. `npm run build`, `npm run lint`, and `npm run test` (43 tests) all pass; CI (`.github/workflows/deploy.yml`, Node 22) runs typecheck + lint + test + build, then deploys to Pages.
 
 Design specs (keep consistent with each other and with the code):
 - **`project_idea.md`** — pitch / overview / game primer.
@@ -66,6 +66,8 @@ The hardest part of this project is not the card logic — it's keeping the host
 Stack in use: **React 18 + Vite + TypeScript (strict, incl. `noUncheckedIndexedAccess`)**, Tailwind, **Zustand**, **PeerJS**, **Zod** (validates all inbound messages), **Web Crypto** (`getRandomValues` for the shuffle seed — never `Math.random`). Tests: **Vitest** with co-located `*.test.ts`. The `@/` alias maps to `src/`. GitHub Pages: Vite `base` is `/beikao/` (override with `BASE_PATH`) and routing is **hash-mode**, so refreshes/deep-links work without a `404.html`.
 
 When extending gameplay, change the engine + its tests first, then the authority, then the protocol/UI — and keep the GDD/TDD in sync.
+
+**Test gotcha:** the default test environment is jsdom, but any test that touches `crypto.subtle` (the provably-fair digest, e.g. `fairness.test.ts` and `authority.test.ts` whose `beginRound` awaits it) must start with `// @vitest-environment node`. jsdom's realm `ArrayBuffer`/`TypedArray` fails Node's cross-realm check in `crypto.subtle.digest` (passes on Node 22, throws on Node 20/CI). Because that digest makes round start **async**, drive rounds in tests by polling for `status === 'BETTING'`, not a fixed `setTimeout` flush.
 
 ## Phase 2 (built)
 

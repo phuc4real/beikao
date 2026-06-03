@@ -29,6 +29,8 @@ export class HostSession implements Session {
   private readonly authority: GameAuthority;
   private readonly conns = new Map<string, DataConnection>(); // playerId → conn
   private disposed = false;
+  private opened = false;
+  private openTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly roomId: string,
@@ -48,17 +50,36 @@ export class HostSession implements Session {
       },
     });
 
+    // If the broker never registers the host, surface an error rather than hang.
+    this.openTimer = setTimeout(() => {
+      if (!this.disposed && !this.opened) {
+        this.hooks.onStatus('error', 'Không tạo được phòng (không kết nối được máy chủ tín hiệu). Thử lại.');
+      }
+    }, 15000);
+
     this.peer = new Peer(peerIdForRoom(roomId), peerOptions());
     this.peer.on('open', () => {
       if (this.disposed) return;
+      this.opened = true;
+      this.clearOpenTimer();
       this.hooks.onStatus('connected');
       this.hooks.onState(deepClone(this.authority.getState()));
     });
     this.peer.on('connection', (conn) => this.registerConnection(conn));
     this.peer.on('error', (err) => {
       const taken = err.type === 'unavailable-id';
-      this.hooks.onStatus('error', taken ? 'Mã phòng đã được dùng, thử lại' : err.message);
+      // Non-fatal post-open errors (e.g. a transient peer issue) shouldn't nuke a live room.
+      if (this.opened && !taken) return;
+      this.clearOpenTimer();
+      this.hooks.onStatus('error', taken ? 'Mã phòng đã được dùng, thử lại' : `Lỗi máy chủ tín hiệu: ${err.type}`);
     });
+  }
+
+  private clearOpenTimer(): void {
+    if (this.openTimer) {
+      clearTimeout(this.openTimer);
+      this.openTimer = null;
+    }
   }
 
   getPlayerId(): string {
@@ -71,6 +92,7 @@ export class HostSession implements Session {
 
   leave(): void {
     this.disposed = true;
+    this.clearOpenTimer();
     for (const conn of this.conns.values()) {
       try {
         conn.send({ v: PROTOCOL_VERSION, type: 'CLOSED', reason: 'Cái đã đóng phòng' } satisfies ServerMessage);

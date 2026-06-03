@@ -4,7 +4,7 @@ import {
   makeIntention,
   type Intention,
 } from '@/network/protocol/messages';
-import { peerOptions } from '@/network/peer/iceConfig';
+import { getPeerOptions } from '@/network/peer/iceConfig';
 import { peerIdForRoom } from '@/utils/id';
 import type { Session, SessionHooks } from './types';
 
@@ -17,7 +17,7 @@ const CONNECT_TIMEOUT_MS = 20000;
 
 export class ClientSession implements Session {
   readonly isHost = false;
-  private readonly peer: Peer;
+  private peer: Peer | null = null;
   private conn: DataConnection | null = null;
   private seq = 0;
   private disposed = false;
@@ -25,14 +25,13 @@ export class ClientSession implements Session {
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
-    roomId: string,
+    private readonly roomId: string,
     private playerId: string,
-    name: string,
-    spectator: boolean,
+    private readonly name: string,
+    private readonly spectator: boolean,
     private readonly hooks: SessionHooks,
   ) {
     this.hooks.onStatus('connecting');
-    this.peer = new Peer(peerOptions());
 
     // If the data channel never opens (broker down, or NAT with no working TURN),
     // PeerJS often just hangs — surface an actionable error instead.
@@ -44,11 +43,21 @@ export class ClientSession implements Session {
       );
     }, CONNECT_TIMEOUT_MS);
 
-    this.peer.on('open', () => {
+    void this.init();
+  }
+
+  /** Fetch ICE servers (incl. live TURN credentials) then open the peer. */
+  private async init(): Promise<void> {
+    const options = await getPeerOptions();
+    if (this.disposed) return;
+    const peer = new Peer(options);
+    this.peer = peer;
+
+    peer.on('open', () => {
       if (this.disposed) return;
-      const conn = this.peer.connect(peerIdForRoom(roomId), {
+      const conn = peer.connect(peerIdForRoom(this.roomId), {
         reliable: true,
-        metadata: { playerId, name, spectator },
+        metadata: { playerId: this.playerId, name: this.name, spectator: this.spectator },
       });
       this.conn = conn;
       conn.on('open', () => {
@@ -65,7 +74,7 @@ export class ClientSession implements Session {
       });
     });
 
-    this.peer.on('error', (err) => {
+    peer.on('error', (err) => {
       if (this.disposed) return;
       this.clearConnectTimer();
       const notFound = err.type === 'peer-unavailable';
@@ -97,7 +106,7 @@ export class ClientSession implements Session {
     this.disposed = true;
     this.clearConnectTimer();
     this.conn?.close();
-    this.peer.destroy();
+    this.peer?.destroy();
   }
 
   private handleData(raw: unknown): void {

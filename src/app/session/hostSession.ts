@@ -6,7 +6,7 @@ import {
   PROTOCOL_VERSION,
   type ServerMessage,
 } from '@/network/protocol/messages';
-import { peerOptions } from '@/network/peer/iceConfig';
+import { getPeerOptions } from '@/network/peer/iceConfig';
 import { peerIdForRoom } from '@/utils/id';
 import { deepClone } from '@/utils/clone';
 import type { Session, SessionHooks } from './types';
@@ -25,7 +25,7 @@ interface ConnMeta {
  */
 export class HostSession implements Session {
   readonly isHost = true;
-  private readonly peer: Peer;
+  private peer: Peer | null = null;
   private readonly authority: GameAuthority;
   private readonly conns = new Map<string, DataConnection>(); // playerId → conn
   private disposed = false;
@@ -57,16 +57,25 @@ export class HostSession implements Session {
       }
     }, 15000);
 
-    this.peer = new Peer(peerIdForRoom(roomId), peerOptions());
-    this.peer.on('open', () => {
+    void this.init();
+  }
+
+  /** Fetch ICE servers (incl. live TURN credentials) then open the host peer. */
+  private async init(): Promise<void> {
+    const options = await getPeerOptions();
+    if (this.disposed) return;
+    const peer = new Peer(peerIdForRoom(this.roomId), options);
+    this.peer = peer;
+
+    peer.on('open', () => {
       if (this.disposed) return;
       this.opened = true;
       this.clearOpenTimer();
       this.hooks.onStatus('connected');
       this.hooks.onState(deepClone(this.authority.getState()));
     });
-    this.peer.on('connection', (conn) => this.registerConnection(conn));
-    this.peer.on('error', (err) => {
+    peer.on('connection', (conn) => this.registerConnection(conn));
+    peer.on('error', (err) => {
       const taken = err.type === 'unavailable-id';
       // Non-fatal post-open errors (e.g. a transient peer issue) shouldn't nuke a live room.
       if (this.opened && !taken) return;
@@ -103,7 +112,7 @@ export class HostSession implements Session {
     }
     this.conns.clear();
     this.authority.dispose();
-    this.peer.destroy();
+    this.peer?.destroy();
   }
 
   // ── connection registry ────────────────────────────────────────────────

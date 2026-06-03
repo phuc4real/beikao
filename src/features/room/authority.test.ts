@@ -1,3 +1,6 @@
+// @vitest-environment node
+// beginRound awaits a Web Crypto SHA-256 commitment; run in Node's realm so
+// crypto.subtle accepts the buffer (jsdom's globals fail Node's cross-realm check).
 import { afterEach, describe, expect, it } from 'vitest';
 import { GameAuthority } from './authority';
 import type { RoomState } from './types';

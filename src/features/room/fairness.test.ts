@@ -1,3 +1,6 @@
+// @vitest-environment node
+// Uses Web Crypto (SHA-256); run in Node's realm so crypto.subtle accepts the
+// ArrayBuffer/TypedArray (jsdom's globals fail Node's cross-realm check).
 import { describe, expect, it } from 'vitest';
 import { createDeck, dealFromDeck, shuffle } from '@/features/cao';
 import { bytesToHex, combineSeeds, randomSeedHex, sha256Hex } from '@/utils/crypto';

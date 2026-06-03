@@ -115,6 +115,37 @@ describe('GameAuthority — Cào cái round', () => {
     expect(connected).toBe(16);
   });
 
+  it('seats spectators separately; they can chat but not play', () => {
+    const { authority, getState } = makeAuthority();
+    active = authority;
+
+    authority.join('watcher', 'Xem', true);
+    let s = getState();
+    expect(s.spectators.some((x) => x.id === 'watcher')).toBe(true);
+    expect(s.players.some((p) => p.id === 'watcher')).toBe(false);
+
+    // A spectator may chat...
+    authority.submit('watcher', { type: 'CHAT', text: 'gl hf' });
+    expect(getState().chat.at(-1)?.text).toBe('gl hf');
+
+    // ...but readying up does nothing (not a seated player; no con becomes ready).
+    authority.submit('watcher', { type: 'SET_READY', ready: true });
+    s = getState();
+    expect(s.players.some((p) => p.id === 'watcher')).toBe(false);
+    expect(s.players.filter((p) => !p.isCai).some((p) => p.ready)).toBe(false);
+  });
+
+  it('falls back to spectator when the room is full', () => {
+    const { authority, getState } = makeAuthority();
+    active = authority;
+    // host + 15 cons = 16 seats (maxPlayers). The next joiner overflows to spectator.
+    for (let i = 0; i < 15; i++) authority.join(`con${i}`, `P${i}`);
+    authority.join('overflow', 'Muộn'); // not requesting spectator, but room is full
+    const s = getState();
+    expect(s.players.filter((p) => p.connected)).toHaveLength(16);
+    expect(s.spectators.some((x) => x.id === 'overflow')).toBe(true);
+  });
+
   it('only the host may start a round', () => {
     const { authority, getState } = makeAuthority();
     active = authority;

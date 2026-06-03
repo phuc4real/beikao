@@ -51,6 +51,7 @@ export interface StoredSession {
   roomId: string;
   name: string;
   isHost: boolean;
+  spectator: boolean;
 }
 
 export function saveSession(s: StoredSession): void {
@@ -63,7 +64,7 @@ export function loadSession(): StoredSession | null {
   try {
     const parsed = JSON.parse(raw) as Partial<StoredSession>;
     if (typeof parsed.roomId === 'string' && typeof parsed.name === 'string') {
-      return { roomId: parsed.roomId, name: parsed.name, isHost: !!parsed.isHost };
+      return { roomId: parsed.roomId, name: parsed.name, isHost: !!parsed.isHost, spectator: !!parsed.spectator };
     }
   } catch {
     /* corrupt — fall through */

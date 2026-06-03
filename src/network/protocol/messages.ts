@@ -12,7 +12,7 @@ export const REACTIONS = ['😂', '🔥', '😱', '👏', '😎', '💰', '😭'
  * arrival, so a malformed or malicious message is dropped, never applied.
  */
 export const intentionSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('JOIN'), name: z.string().trim().min(1).max(20) }),
+  z.object({ type: z.literal('JOIN'), name: z.string().trim().min(1).max(20), spectator: z.boolean().optional() }),
   z.object({ type: z.literal('SET_READY'), ready: z.boolean() }),
   z.object({ type: z.literal('PLACE_BET'), amount: z.number().int().positive() }),
   z.object({ type: z.literal('CLEAR_BET') }),

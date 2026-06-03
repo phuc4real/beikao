@@ -24,6 +24,7 @@ export class ClientSession implements Session {
     roomId: string,
     private playerId: string,
     name: string,
+    spectator: boolean,
     private readonly hooks: SessionHooks,
   ) {
     this.hooks.onStatus('connecting');
@@ -33,7 +34,7 @@ export class ClientSession implements Session {
       if (this.disposed) return;
       const conn = this.peer.connect(peerIdForRoom(roomId), {
         reliable: true,
-        metadata: { playerId, name },
+        metadata: { playerId, name, spectator },
       });
       this.conn = conn;
       conn.on('open', () => this.hooks.onStatus('connected'));

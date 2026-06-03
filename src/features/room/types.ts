@@ -92,6 +92,13 @@ export interface ReactionMsg {
   ts: number;
 }
 
+export interface SpectatorView {
+  id: string;
+  name: string;
+}
+
+export const SPECTATOR_CAP = 50;
+
 /**
  * The authoritative, broadcastable room state. The host holds the master copy;
  * clients render a mirror. NOTE: the deck/seed and unrevealed hands are NEVER
@@ -104,6 +111,8 @@ export interface RoomState {
   status: RoomStatus;
   config: RoomConfig;
   players: PlayerView[];
+  /** Watch-only participants (don't hold a seat or balance; can chat/react). */
+  spectators: SpectatorView[];
   round: RoundView | null;
   /** Completed rounds (full views with revealed hands), newest first — for replay. */
   history: RoundView[];

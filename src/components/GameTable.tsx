@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { selectMe, useGame } from '@/app/store/store';
+import { selectIsSpectator, selectMe, useGame } from '@/app/store/store';
 import { useCountdown } from '@/app/hooks';
 import { Button, Panel } from '@/components/ui';
 import { Chat } from '@/components/Chat';
@@ -15,6 +15,7 @@ export function GameTable() {
   const room = useGame((s) => s.room)!;
   const me = useGame(selectMe);
   const isHost = useGame((s) => s.isHost());
+  const isSpectator = useGame(selectIsSpectator);
   const sendSeed = useGame((s) => s.sendSeed);
   const round = room.round;
 
@@ -35,6 +36,12 @@ export function GameTable() {
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-3 p-4">
       <Header round={round} betting={betting} caiName={room.players.find((p) => p.isCai)?.name ?? ''} />
+
+      {isSpectator && (
+        <div className="rounded-xl bg-indigo-500/20 px-4 py-1.5 text-center text-sm text-indigo-200">
+          👁 Bạn đang xem
+        </div>
+      )}
 
       <Panel className="flex-1">
         <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -141,7 +148,8 @@ function Seat({
             card={hand?.cards[i]}
             revealed={!!hand}
             dealDelayMs={(i * seatCount + seatIndex) * 55}
-            flipDelayMs={seatIndex * 160 + i * 80 + 200}
+            // The cái reveals LAST for suspense: base delay placed after every con.
+            flipDelayMs={(player.isCai ? seatCount : seatIndex) * 220 + i * 80 + 200}
           />
         ))}
         {hand && <span className="ml-2 text-sm font-semibold">{handLabel(hand)}</span>}
@@ -169,7 +177,10 @@ function Seat({
 
 function MyHand({ round, betting }: { round: RoundView; betting: boolean }) {
   const me = useGame(selectMe);
+  const playerCount = useGame((s) => s.room?.players.length ?? 1);
   if (!me) return null;
+  // Match the table: if I'm the cái, my big hand reveals after all the cons.
+  const flipBase = me.isCai ? playerCount * 220 + 200 : 150;
   const hand = round.hands?.[me.id];
   const revealed = !!hand;
   const participating = betting ? me.isCai || (round.bets[me.id] ?? 0) > 0 : revealed;
@@ -195,7 +206,7 @@ function MyHand({ round, betting }: { round: RoundView; betting: boolean }) {
               revealed={revealed}
               size="lg"
               dealDelayMs={i * 80}
-              flipDelayMs={i * 130 + 150}
+              flipDelayMs={i * 130 + flipBase}
             />
           ))}
         </div>

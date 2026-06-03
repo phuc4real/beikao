@@ -17,7 +17,7 @@ interface AppState {
   notice: string | null;
 
   createRoom: (name: string, config?: Partial<RoomConfig>) => void;
-  joinRoom: (code: string, name: string) => void;
+  joinRoom: (code: string, name: string, asSpectator?: boolean) => void;
   /** Auto-rejoin a stored room after a page reload (clients only). */
   tryReconnect: () => boolean;
   leave: () => void;
@@ -90,19 +90,19 @@ export const useGame = create<AppState>((set, get) => {
       setStoredName(name);
       // Host authority state can't survive a reload, so don't mark the session
       // as rejoinable — a host reload starts fresh.
-      saveSession({ roomId, name, isHost: true });
+      saveSession({ roomId, name, isHost: true, spectator: false });
       set({ status: 'connecting', fatal: null, notice: null, me: { playerId, name }, room: null });
       session = new HostSession(roomId, playerId, name, config ?? {}, hooksWithSessionGuard(name));
     },
 
-    joinRoom: (code, name) => {
+    joinRoom: (code, name, asSpectator = false) => {
       session?.leave();
       const roomId = code.trim().toUpperCase();
       const playerId = getPlayerId();
       setStoredName(name);
-      saveSession({ roomId, name, isHost: false });
+      saveSession({ roomId, name, isHost: false, spectator: asSpectator });
       set({ status: 'connecting', fatal: null, notice: null, me: { playerId, name }, room: null });
-      session = new ClientSession(roomId, playerId, name, hooksWithSessionGuard(name));
+      session = new ClientSession(roomId, playerId, name, asSpectator, hooksWithSessionGuard(name));
     },
 
     tryReconnect: () => {
@@ -112,7 +112,7 @@ export const useGame = create<AppState>((set, get) => {
         clearSession();
         return false;
       }
-      get().joinRoom(stored.roomId, stored.name);
+      get().joinRoom(stored.roomId, stored.name, stored.spectator);
       return true;
     },
 
@@ -148,4 +148,10 @@ export const useGame = create<AppState>((set, get) => {
 export function selectMe(state: AppState) {
   if (!state.room || !state.me) return undefined;
   return state.room.players.find((p) => p.id === state.me!.playerId);
+}
+
+/** True if I'm watching as a spectator (not a seated player). */
+export function selectIsSpectator(state: AppState): boolean {
+  if (!state.room || !state.me) return false;
+  return state.room.spectators.some((s) => s.id === state.me!.playerId);
 }

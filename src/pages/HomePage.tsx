@@ -14,6 +14,7 @@ export function HomePage() {
   const [tab, setTab] = useState<Tab>('create');
   const [name, setName] = useState(getStoredName);
   const [code, setCode] = useState('');
+  const [asSpectator, setAsSpectator] = useState(false);
 
   // Prefill the join code from a share link (?room=BAC-XXXX).
   useEffect(() => {
@@ -30,7 +31,7 @@ export function HomePage() {
   const submit = () => {
     if (!canSubmit) return;
     if (tab === 'create') createRoom(trimmedName);
-    else joinRoom(code, trimmedName);
+    else joinRoom(code, trimmedName, asSpectator);
     navigate('/room');
   };
 
@@ -69,19 +70,30 @@ export function HomePage() {
         </label>
 
         {tab === 'join' && (
-          <label className="block">
-            <span className="text-sm text-white/60">Mã phòng</span>
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="BAC-XXXX"
-              className="mt-1 w-full rounded-lg bg-black/30 px-3 py-2 font-mono uppercase outline-none ring-amber-400 focus:ring-2"
-            />
-          </label>
+          <>
+            <label className="block">
+              <span className="text-sm text-white/60">Mã phòng</span>
+              <input
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                placeholder="BAC-XXXX"
+                className="mt-1 w-full rounded-lg bg-black/30 px-3 py-2 font-mono uppercase outline-none ring-amber-400 focus:ring-2"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-white/70">
+              <input
+                type="checkbox"
+                checked={asSpectator}
+                onChange={(e) => setAsSpectator(e.target.checked)}
+                className="h-4 w-4 accent-amber-400"
+              />
+              Vào xem (không chơi)
+            </label>
+          </>
         )}
 
         <Button onClick={submit} disabled={!canSubmit} className="w-full">
-          {tab === 'create' ? 'Tạo phòng & làm cái' : 'Vào phòng'}
+          {tab === 'create' ? 'Tạo phòng & làm cái' : asSpectator ? 'Vào xem' : 'Vào phòng'}
         </Button>
       </Panel>
 

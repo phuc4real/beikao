@@ -73,7 +73,10 @@ When extending gameplay, change the engine + its tests first, then the authority
 - **Reconnect after reload** (`utils/storage.ts`): session persisted in localStorage; `RoomPage` calls `tryReconnect()` on mount. Clients rejoin their seat; a host reload can't restore authority → goes home. Player name is remembered.
 - **Room settings + bonuses**: `UPDATE_CONFIG` intention (host, LOBBY only); `SettingsModal`. Bonus multipliers flow through the engine's settlement.
 - **Reactions + replay**: `REACTION` intention → `FloatingReactions`; `history` stores full `RoundView`s (cards + fairness) so `History`/replay can re-show and re-verify any past round.
+- **Spectator mode**: join with `spectator` (explicit toggle, or auto when the room is full); spectators are tracked in `RoomState.spectators` (no seat/balance), can chat/react but not bet/ready. `selectIsSpectator` drives the read-only UI.
+- **IndexedDB history** (`features/history/db.ts`, via `idb`): completed rounds persisted per room and merged with live snapshot history in `HistoryPanel` (survives reload, accumulates past the in-memory cap). Degrades to live-only if storage is unavailable.
+- **Reveal drama**: the cái's cards flip *last* (`flipDelayMs` places its base after every con) in both the table seats and the big `MyHand`.
 
 ## Not yet built (per TDD phasing)
 
-Host migration, spectator mode, rotating cái, full vi/en i18n (UI is Vietnamese), and IndexedDB (session uses localStorage; history is in-memory/snapshot-restored). Cào rùa settlement works but its betting UI is minimal (Cào cái is the fully-driven mode).
+Host migration, rotating cái, and full vi/en i18n (UI is Vietnamese). Session persistence uses localStorage (only round history uses IndexedDB). Cào rùa settlement works but its betting UI is minimal (Cào cái is the fully-driven mode).

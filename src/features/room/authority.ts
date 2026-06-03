@@ -13,6 +13,7 @@ import { REACTIONS, type Intention, type ServerMessage } from '@/network/protoco
 import {
   DEFAULT_CONFIG,
   MIN_PLAYERS,
+  SPECTATOR_CAP,
   type PlayerView,
   type RevealedHand,
   type RoomConfig,
@@ -81,6 +82,7 @@ export class GameAuthority {
           connected: true,
         },
       ],
+      spectators: [],
       round: null,
       history: [],
       chat: [],
@@ -99,19 +101,35 @@ export class GameAuthority {
 
   // ── connection lifecycle ──────────────────────────────────────────────
 
-  /** A connection opened or reconnected; create/restore the player record. */
-  join(playerId: string, name: string): void {
+  /** A connection opened or reconnected; create/restore a player or spectator. */
+  join(playerId: string, name: string, spectator = false): void {
     const existing = this.findPlayer(playerId);
     if (existing) {
       existing.connected = true;
       this.commit();
       return;
     }
-    const connectedCount = this.state.players.filter((p) => p.connected).length;
-    if (connectedCount >= this.state.config.maxPlayers) {
-      this.cb.sendTo(playerId, { v: 1, type: 'ERROR', code: 'ROOM_FULL', reason: 'Phòng đã đầy' });
+    if (this.state.spectators.some((s) => s.id === playerId)) {
+      this.commit(); // already a spectator (reconnect)
       return;
     }
+
+    const connectedCount = this.state.players.filter((p) => p.connected).length;
+    const full = connectedCount >= this.state.config.maxPlayers;
+
+    if (spectator || full) {
+      if (this.state.spectators.length >= SPECTATOR_CAP) {
+        this.cb.sendTo(playerId, { v: 1, type: 'ERROR', code: 'ROOM_FULL', reason: 'Phòng đã đầy (cả chỗ xem)' });
+        return;
+      }
+      this.state.spectators.push({ id: playerId, name: this.uniqueName(name) });
+      if (full && !spectator) {
+        this.cb.sendTo(playerId, { v: 1, type: 'ERROR', code: 'ROOM_FULL', reason: 'Phòng đã đầy — bạn vào xem' });
+      }
+      this.commit();
+      return;
+    }
+
     this.state.players.push({
       id: playerId,
       name: this.uniqueName(name),
@@ -123,13 +141,19 @@ export class GameAuthority {
     this.commit();
   }
 
-  /** A connection dropped; keep the seat/balance (grace handled at session level). */
+  /** A connection dropped; keep player seats, drop spectators. */
   disconnect(playerId: string): void {
     const p = this.findPlayer(playerId);
-    if (!p) return;
-    p.connected = false;
-    if (p.id !== this.state.caiId) p.ready = false;
-    this.commit();
+    if (p) {
+      p.connected = false;
+      if (p.id !== this.state.caiId) p.ready = false;
+      this.commit();
+      return;
+    }
+    if (this.state.spectators.some((s) => s.id === playerId)) {
+      this.state.spectators = this.state.spectators.filter((s) => s.id !== playerId);
+      this.commit();
+    }
   }
 
   // ── intention handling ────────────────────────────────────────────────
@@ -138,13 +162,24 @@ export class GameAuthority {
     const p = this.findPlayer(playerId);
     switch (msg.type) {
       case 'JOIN':
-        this.join(playerId, msg.name);
+        this.join(playerId, msg.name, msg.spectator);
         return;
       case 'REQUEST_SNAPSHOT':
         this.cb.sendTo(playerId, { v: 1, type: 'SNAPSHOT', state: this.state });
         return;
+      // Spectators (not seated players) may still chat and react.
+      case 'CHAT': {
+        const name = p?.name ?? this.findSpectatorName(playerId);
+        if (name) this.addChat(playerId, name, msg.text);
+        return;
+      }
+      case 'REACTION': {
+        const name = p?.name ?? this.findSpectatorName(playerId);
+        if (name) this.addReaction(playerId, name, msg.emoji);
+        return;
+      }
     }
-    if (!p) return; // every other intention requires an existing player
+    if (!p) return; // remaining intentions require a seated player
 
     switch (msg.type) {
       case 'SET_READY':
@@ -161,12 +196,6 @@ export class GameAuthority {
           delete this.state.round.bets[p.id];
           this.commit();
         }
-        return;
-      case 'CHAT':
-        this.addChat(p, msg.text);
-        return;
-      case 'REACTION':
-        this.addReaction(p, msg.emoji);
         return;
       case 'PLAYER_SEED':
         // Cons contribute entropy during betting. The cái must NOT (it knows the
@@ -353,21 +382,25 @@ export class GameAuthority {
 
   // ── chat ──────────────────────────────────────────────────────────────
 
-  private addChat(p: PlayerView, text: string): void {
+  private addChat(playerId: string, name: string, text: string): void {
     this.state.chat = [
       ...this.state.chat,
-      { id: genId(), playerId: p.id, name: p.name, text, ts: Date.now() },
+      { id: genId(), playerId, name, text, ts: Date.now() },
     ].slice(-CHAT_CAP);
     this.commit();
   }
 
-  private addReaction(p: PlayerView, emoji: string): void {
+  private addReaction(playerId: string, name: string, emoji: string): void {
     if (!ALLOWED_EMOJIS.has(emoji)) return;
     this.state.reactions = [
       ...this.state.reactions,
-      { id: genId(), playerId: p.id, name: p.name, emoji, ts: Date.now() },
+      { id: genId(), playerId, name, emoji, ts: Date.now() },
     ].slice(-REACTION_CAP);
     this.commit();
+  }
+
+  private findSpectatorName(id: string): string | undefined {
+    return this.state.spectators.find((s) => s.id === id)?.name;
   }
 
   // ── helpers ───────────────────────────────────────────────────────────
@@ -378,7 +411,10 @@ export class GameAuthority {
 
   private uniqueName(raw: string): string {
     const base = raw.trim().slice(0, 20) || 'Người chơi';
-    const taken = new Set(this.state.players.map((p) => p.name));
+    const taken = new Set([
+      ...this.state.players.map((p) => p.name),
+      ...this.state.spectators.map((s) => s.name),
+    ]);
     if (!taken.has(base)) return base;
     for (let i = 2; i < 100; i++) {
       const candidate = `${base} #${i}`;

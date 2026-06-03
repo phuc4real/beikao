@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { selectMe, useGame } from '@/app/store/store';
+import { selectIsSpectator, selectMe, useGame } from '@/app/store/store';
 import { Button, Chip, Panel } from '@/components/ui';
 import { Chat } from '@/components/Chat';
 import { SettingsModal } from '@/components/SettingsModal';
@@ -14,6 +14,7 @@ export function Lobby() {
   const setReady = useGame((s) => s.setReady);
   const startRound = useGame((s) => s.startRound);
   const leave = useGame((s) => s.leave);
+  const isSpectator = useGame(selectIsSpectator);
   const [showSettings, setShowSettings] = useState(false);
 
   const connected = room.players.filter((p) => p.connected);
@@ -38,6 +39,7 @@ export function Lobby() {
           </h1>
           <p className="text-sm text-white/60">
             Chế độ: {room.config.mode === 'CAO_CAI' ? 'Cào cái' : 'Cào rùa'} · {connected.length}/{room.config.maxPlayers}
+            {room.spectators.length > 0 && <span> · 👁 {room.spectators.length} xem</span>}
           </p>
         </div>
         <div className="flex gap-2">
@@ -53,6 +55,12 @@ export function Lobby() {
       </header>
 
       {showSettings && <SettingsModal config={room.config} onClose={() => setShowSettings(false)} />}
+
+      {isSpectator && (
+        <div className="rounded-xl bg-indigo-500/20 px-4 py-2 text-center text-sm text-indigo-200">
+          👁 Bạn đang xem — không tham gia chơi
+        </div>
+      )}
 
       <Panel className="flex-1">
         <h2 className="mb-2 text-sm uppercase tracking-wide text-white/50">Người chơi</h2>

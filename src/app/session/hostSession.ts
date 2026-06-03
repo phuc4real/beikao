@@ -14,6 +14,7 @@ import type { Session, SessionHooks } from './types';
 interface ConnMeta {
   playerId: string;
   name: string;
+  spectator?: boolean;
 }
 
 /**
@@ -100,7 +101,7 @@ export class HostSession implements Session {
       }
       this.conns.set(pid, conn);
       conn.send({ v: PROTOCOL_VERSION, type: 'WELCOME', playerId: pid, roomId: this.roomId } satisfies ServerMessage);
-      this.authority.join(pid, meta.name ?? 'Người chơi');
+      this.authority.join(pid, meta.name ?? 'Người chơi', meta.spectator);
     });
 
     conn.on('data', (raw) => {

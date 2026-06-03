@@ -1,13 +1,51 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGame } from '@/app/store/store';
 import { Panel } from '@/components/ui';
 import { TableCard } from '@/components/TableCard';
 import { FairnessBadge } from '@/components/FairnessBadge';
 import { handLabel } from '@/components/handLabel';
+import { loadRounds, saveRounds } from '@/features/history/db';
 import type { RoundView } from '@/features/room/types';
 
+/**
+ * Merge the live (snapshot) history with rounds persisted in IndexedDB, so the
+ * log survives reloads and accumulates beyond the host's in-memory cap. Saves
+ * only when a newer round appears, and degrades to live-only if storage fails.
+ */
+function usePersistentHistory(roomId: string, live: RoundView[]): RoundView[] {
+  const [persisted, setPersisted] = useState<RoundView[]>([]);
+  const lastSaved = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    lastSaved.current = 0;
+    setPersisted([]);
+    loadRounds(roomId).then((r) => {
+      if (!cancelled) setPersisted(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId]);
+
+  useEffect(() => {
+    const maxNum = live.reduce((m, r) => Math.max(m, r.roundNumber), 0);
+    if (maxNum > lastSaved.current) {
+      lastSaved.current = maxNum;
+      void saveRounds(roomId, live);
+    }
+  }, [roomId, live]);
+
+  const byNumber = new Map<number, RoundView>();
+  for (const r of persisted) byNumber.set(r.roundNumber, r);
+  for (const r of live) byNumber.set(r.roundNumber, r); // live wins on conflict
+  return [...byNumber.values()].sort((a, b) => b.roundNumber - a.roundNumber);
+}
+
 export function HistoryPanel() {
-  const history = useGame((s) => s.room?.history ?? []);
+  const roomId = useGame((s) => s.room?.id ?? '');
+  const live = useGame((s) => s.room?.history ?? []);
+  const history = usePersistentHistory(roomId, live);
   const [replay, setReplay] = useState<RoundView | null>(null);
 
   if (history.length === 0) return null;

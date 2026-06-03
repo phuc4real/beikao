@@ -1,10 +1,15 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getSupabase } from '@/network/supabase/client';
-import type { Intention, ServerMessage } from '@/network/protocol/messages';
-import type { RoomConfig, RoomState } from '@/features/room/types';
+import { REACTIONS, type Intention, type ServerMessage } from '@/network/protocol/messages';
+import type { ReactionMsg, RoomConfig, RoomState } from '@/features/room/types';
+import { genId } from '@/utils/id';
 import type { Session, SessionHooks } from './types';
 
 const CONNECT_TIMEOUT_MS = 15000;
+/** Palette guard for inbound/outbound reactions (broadcast is untrusted). */
+const ALLOWED_EMOJIS = new Set<string>(REACTIONS);
+/** Broadcast event name carrying a {@link ReactionMsg} payload. */
+const REACTION_EVENT = 'reaction';
 
 export interface SupabaseSessionOptions {
   roomId: string;
@@ -62,8 +67,27 @@ export class SupabaseSession implements Session {
     return this.opts.playerId;
   }
 
-  send(intention: Intention): void {
-    void this.invoke({ op: 'intent', intention });
+  send(intention: Intention): Promise<void> {
+    return this.invoke({ op: 'intent', intention }).then(() => undefined);
+  }
+
+  /**
+   * Reactions are ephemeral chatter, so they skip the authority entirely: we
+   * broadcast over the open Realtime socket (instant, no Edge cold start, no
+   * full-state rewrite). Broadcast doesn't echo to self, so we surface our own
+   * reaction locally too. Palette-checked both ways since broadcast is untrusted.
+   */
+  sendReaction(emoji: string): void {
+    if (this.disposed || !ALLOWED_EMOJIS.has(emoji)) return;
+    const msg: ReactionMsg = {
+      id: genId(),
+      playerId: this.opts.playerId,
+      name: this.opts.name,
+      emoji,
+      ts: Date.now(),
+    };
+    this.hooks.onReaction(msg);
+    void this.channel?.send({ type: 'broadcast', event: REACTION_EVENT, payload: msg });
   }
 
   leave(): void {
@@ -137,6 +161,12 @@ export class SupabaseSession implements Session {
           if (row?.state) this.hooks.onState(row.state);
         },
       )
+      // Ephemeral reactions ride broadcast (peer→peer over the socket), not the
+      // authoritative state — so they never touch the Edge Function or Postgres.
+      .on('broadcast', { event: REACTION_EVENT }, ({ payload }) => {
+        if (this.disposed) return;
+        this.onBroadcastReaction(payload as Partial<ReactionMsg> | null);
+      })
       // Realtime Presence is the source of truth for "who's actually connected":
       // a dropped socket (close/crash/sleep/network) removes the peer here.
       .on('presence', { event: 'sync' }, () => this.onPresenceSync())
@@ -197,6 +227,19 @@ export class SupabaseSession implements Session {
   private applyResponse(res: IntentResponse): void {
     if (res.state) this.hooks.onState(res.state);
     for (const msg of res.server ?? []) this.hooks.onServerMessage(msg);
+  }
+
+  /** Validate an inbound broadcast reaction (untrusted peer payload) and surface it. */
+  private onBroadcastReaction(payload: Partial<ReactionMsg> | null): void {
+    if (!payload || typeof payload.emoji !== 'string' || !ALLOWED_EMOJIS.has(payload.emoji)) return;
+    if (typeof payload.id !== 'string' || typeof payload.name !== 'string') return;
+    this.hooks.onReaction({
+      id: payload.id,
+      playerId: typeof payload.playerId === 'string' ? payload.playerId : '',
+      name: payload.name,
+      emoji: payload.emoji,
+      ts: typeof payload.ts === 'number' ? payload.ts : Date.now(),
+    });
   }
 
   // ── presence ──────────────────────────────────────────────────────────────

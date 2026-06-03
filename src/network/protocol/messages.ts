@@ -3,7 +3,11 @@ import type { RoomState } from '@/features/room/types';
 
 export const PROTOCOL_VERSION = 1 as const;
 
-/** The fixed emoji palette for table reactions (validated server-side). */
+/**
+ * The fixed emoji palette for table reactions. Reactions ride Realtime
+ * broadcast (not the authority), so the palette is enforced client-side on both
+ * send and receive in `SupabaseSession` rather than in the Edge Function.
+ */
 export const REACTIONS = ['😂', '🔥', '😱', '👏', '😎', '💰', '😭', '🎉'] as const;
 
 /**
@@ -22,7 +26,6 @@ export const intentionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('BACK_TO_LOBBY') }),
   z.object({ type: z.literal('CHAT'), text: z.string().trim().min(1).max(200) }),
   z.object({ type: z.literal('PLAYER_SEED'), seed: z.string().regex(/^[0-9a-f]+$/i).min(8).max(128) }),
-  z.object({ type: z.literal('REACTION'), emoji: z.string().min(1).max(8) }),
   z.object({
     type: z.literal('UPDATE_CONFIG'),
     config: z.object({

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Multiplayer Bài cào (Vietnamese 3-card game) — host-authoritative P2P over WebRTC, deployable to GitHub Pages.",
+  "description": "Multiplayer Bài cào (Vietnamese 3-card game) — server-authoritative on Supabase (Postgres + Realtime + Edge Functions), static SPA deployable to GitHub Pages.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

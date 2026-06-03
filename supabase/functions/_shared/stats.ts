@@ -1,24 +1,26 @@
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { RoomState } from './types.ts';
 
+export interface RoundResult {
+  id: string;
+  name: string;
+  net: number;
+  balance: number;
+}
+
 /**
- * Record a just-settled round's per-player net into durable `profiles` (powers
- * the leaderboard). Call only when a round transitioned into REVEAL. Failures
- * are swallowed — stats must never break gameplay. See migration 0003.
+ * Build the per-player result rows for a just-settled round (the input to
+ * `record_round_result`), or null if there's nothing to record. Pure — the
+ * caller passes the array straight into `commit_room` so stats are written in
+ * the SAME transaction as the state commit (one round trip, atomic). Persists
+ * the post-settle balance so chips follow the player across rooms. See 0008.
  */
-export async function recordRound(db: SupabaseClient, state: RoomState): Promise<void> {
+export function roundResults(state: RoomState): RoundResult[] | null {
   const deltas = state.round?.result?.deltas;
-  if (!deltas) return;
+  if (!deltas) return null;
   const playerById = new Map(state.players.map((p) => [p.id, p]));
   const results = Object.entries(deltas).map(([id, net]) => {
     const p = playerById.get(id);
-    // Persist the post-settle balance so chips follow the player to other rooms.
     return { id, name: p?.name ?? 'Người chơi', net, balance: p?.balance ?? 0 };
   });
-  if (results.length === 0) return;
-  try {
-    await db.rpc('record_round_result', { results });
-  } catch {
-    /* stats are best-effort */
-  }
+  return results.length > 0 ? results : null;
 }

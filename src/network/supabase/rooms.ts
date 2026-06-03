@@ -23,7 +23,7 @@ export async function fetchDirectory(): Promise<DirectoryRoom[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('room_directory')
-    .select('*')
+    .select('code, name, mode, status, player_count, max_players, created_at')
     .order('created_at', { ascending: false })
     .limit(50);
   if (error || !data) return [];

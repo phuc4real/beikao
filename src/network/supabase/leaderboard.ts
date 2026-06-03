@@ -14,7 +14,9 @@ export interface LeaderboardRow {
 export async function fetchLeaderboard(): Promise<LeaderboardRow[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const { data, error } = await supabase.from('leaderboard').select('*');
+  const { data, error } = await supabase
+    .from('leaderboard')
+    .select('id, name, total_net, balance, rounds_played, wins');
   if (error || !data) return [];
   return data as LeaderboardRow[];
 }

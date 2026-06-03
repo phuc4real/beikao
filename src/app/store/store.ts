@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { RoomConfig, RoomState } from '@/features/room/types';
+import type { ReactionMsg, RoomConfig, RoomState } from '@/features/room/types';
 import type { Intention } from '@/network/protocol/messages';
 import { SupabaseSession } from '@/app/session/supabaseSession';
 import { isSupabaseConfigured } from '@/network/supabase/client';
@@ -8,14 +8,28 @@ import type { ConnStatus, Session, SessionHooks } from '@/app/session/types';
 import { genRoomCode } from '@/utils/id';
 import { clearSession, loadSession, saveSession, setStoredName } from '@/utils/storage';
 
+/** Keep the floating-reaction overlay bounded; they fade after a few seconds. */
+const REACTION_CAP = 24;
+
 interface AppState {
   room: RoomState | null;
   me: { playerId: string; name: string } | null;
+  /**
+   * Ephemeral table reactions (Realtime broadcast, not authoritative state).
+   * Transient and client-local — never persisted, capped, cleared on leave.
+   */
+  reactions: ReactionMsg[];
   status: ConnStatus;
   /** Fatal connection error (room not found, closed, etc.). */
   fatal: string | null;
   /** Transient notice (bet rejected, etc.) shown then cleared by the UI. */
   notice: string | null;
+  /**
+   * In-flight command intentions, keyed by action (e.g. 'bet', 'ready'). The
+   * server round trip is ~1s+, so the UI shows a pending/disabled state for the
+   * duration instead of looking frozen. Set true on send, false on response.
+   */
+  pending: Record<string, boolean>;
 
   createRoom: (name: string, config?: Partial<RoomConfig>, isPublic?: boolean) => void;
   joinRoom: (code: string, name: string, asSpectator?: boolean) => void;
@@ -46,6 +60,8 @@ let session: Session | null = null;
 export const useGame = create<AppState>((set, get) => {
   const hooks = (name: string): SessionHooks => ({
     onState: (state) => set({ room: state }),
+    onReaction: (reaction) =>
+      set((s) => ({ reactions: [...s.reactions, reaction].slice(-REACTION_CAP) })),
     onStatus: (status, detail) =>
       set((s) => ({
         status,
@@ -75,14 +91,29 @@ export const useGame = create<AppState>((set, get) => {
     };
   };
 
-  const dispatch = (intention: Intention) => session?.send(intention);
+  // Fire-and-forget: high-frequency, no pending UI (chat, seeds).
+  const dispatch = (intention: Intention) => void session?.send(intention);
+
+  // A user command: flag `key` pending for the whole server round trip so the
+  // triggering control can disable + spin. Always clears, even on failure.
+  const command = async (key: string, intention: Intention) => {
+    if (!session) return;
+    set((s) => ({ pending: { ...s.pending, [key]: true } }));
+    try {
+      await session.send(intention);
+    } finally {
+      set((s) => ({ pending: { ...s.pending, [key]: false } }));
+    }
+  };
 
   return {
     room: null,
     me: null,
+    reactions: [],
     status: 'idle',
     fatal: null,
     notice: null,
+    pending: {},
 
     createRoom: async (name, config, isPublic = true) => {
       session?.leave();
@@ -92,7 +123,7 @@ export const useGame = create<AppState>((set, get) => {
       }
       const roomId = genRoomCode();
       setStoredName(name);
-      set({ status: 'connecting', fatal: null, notice: null, room: null });
+      set({ status: 'connecting', fatal: null, notice: null, room: null, reactions: [] });
       // The id is the (anonymous) auth uid; resolving it is async.
       const playerId = await ensureIdentity();
       set({ me: { playerId, name } });
@@ -115,7 +146,7 @@ export const useGame = create<AppState>((set, get) => {
       const roomId = code.trim().toUpperCase();
       setStoredName(name);
       saveSession({ roomId, name, isHost: false, spectator: asSpectator });
-      set({ status: 'connecting', fatal: null, notice: null, room: null });
+      set({ status: 'connecting', fatal: null, notice: null, room: null, reactions: [] });
       const playerId = await ensureIdentity();
       set({ me: { playerId, name } });
       session = new SupabaseSession(
@@ -137,21 +168,21 @@ export const useGame = create<AppState>((set, get) => {
       session?.leave();
       session = null;
       clearSession();
-      set({ room: null, me: null, status: 'idle', fatal: null, notice: null });
+      set({ room: null, me: null, reactions: [], status: 'idle', fatal: null, notice: null, pending: {} });
     },
 
-    updateConfig: (config) => dispatch({ type: 'UPDATE_CONFIG', config }),
+    updateConfig: (config) => void command('config', { type: 'UPDATE_CONFIG', config }),
 
-    setReady: (ready) => dispatch({ type: 'SET_READY', ready }),
-    placeBet: (amount) => dispatch({ type: 'PLACE_BET', amount }),
-    clearBet: () => dispatch({ type: 'CLEAR_BET' }),
-    startRound: () => dispatch({ type: 'START_ROUND' }),
-    closeBetting: () => dispatch({ type: 'CLOSE_BETTING' }),
-    nextRound: () => dispatch({ type: 'NEXT_ROUND' }),
-    backToLobby: () => dispatch({ type: 'BACK_TO_LOBBY' }),
+    setReady: (ready) => void command('ready', { type: 'SET_READY', ready }),
+    placeBet: (amount) => void command('bet', { type: 'PLACE_BET', amount }),
+    clearBet: () => void command('bet', { type: 'CLEAR_BET' }),
+    startRound: () => void command('start', { type: 'START_ROUND' }),
+    closeBetting: () => void command('close', { type: 'CLOSE_BETTING' }),
+    nextRound: () => void command('next', { type: 'NEXT_ROUND' }),
+    backToLobby: () => void command('lobby', { type: 'BACK_TO_LOBBY' }),
     sendChat: (text) => dispatch({ type: 'CHAT', text }),
     sendSeed: (seed) => dispatch({ type: 'PLAYER_SEED', seed }),
-    sendReaction: (emoji) => dispatch({ type: 'REACTION', emoji }),
+    sendReaction: (emoji) => session?.sendReaction(emoji),
 
     clearNotice: () => set({ notice: null }),
     isHost: () => {

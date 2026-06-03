@@ -9,7 +9,7 @@ import {
 } from '@/features/cao';
 import { bytesToHex, combineSeeds, hexToBytes, randomSeed, sha256Hex } from '@/utils/crypto';
 import { genId } from '@/utils/id';
-import { REACTIONS, type Intention, type ServerMessage } from '@/network/protocol/messages';
+import type { Intention, ServerMessage } from '@/network/protocol/messages';
 import {
   DEFAULT_CONFIG,
   MIN_PLAYERS,
@@ -22,9 +22,13 @@ import {
 } from './types';
 
 const CHAT_CAP = 50;
-const HISTORY_CAP = 50;
-const REACTION_CAP = 24;
-const ALLOWED_EMOJIS = new Set<string>(REACTIONS);
+// The authoritative `state.history` rides inside the `rooms.state` jsonb that is
+// read + rewritten on EVERY intent and re-broadcast to every client over
+// Realtime. Each RoundView is heavy (every player's revealed cards, seeds, deal
+// order, results), so a deep cap bloats the hot path. Clients persist the FULL
+// history in IndexedDB and merge it with this live snapshot (see HistoryPanel),
+// so the server only needs enough for round numbering + a few recent replays.
+const HISTORY_CAP = 8;
 
 export interface AuthorityCallbacks {
   /** Push the latest authoritative state to every connection (incl. host loopback). */
@@ -124,7 +128,6 @@ export class GameAuthority {
       round: null,
       history: [],
       chat: [],
-      reactions: [],
       version: 1,
     };
   }
@@ -273,15 +276,11 @@ export class GameAuthority {
       case 'REQUEST_SNAPSHOT':
         this.cb.sendTo(playerId, { v: 1, type: 'SNAPSHOT', state: this.state });
         return;
-      // Spectators (not seated players) may still chat and react.
+      // Spectators (not seated players) may still chat. (Reactions are ephemeral
+      // and ride Realtime broadcast, so they never reach the authority.)
       case 'CHAT': {
         const name = p?.name ?? this.findSpectatorName(playerId);
         if (name) this.addChat(playerId, name, msg.text);
-        return;
-      }
-      case 'REACTION': {
-        const name = p?.name ?? this.findSpectatorName(playerId);
-        if (name) this.addReaction(playerId, name, msg.emoji);
         return;
       }
     }
@@ -497,15 +496,6 @@ export class GameAuthority {
       ...this.state.chat,
       { id: genId(), playerId, name, text, ts: Date.now() },
     ].slice(-CHAT_CAP);
-    this.commit();
-  }
-
-  private addReaction(playerId: string, name: string, emoji: string): void {
-    if (!ALLOWED_EMOJIS.has(emoji)) return;
-    this.state.reactions = [
-      ...this.state.reactions,
-      { id: genId(), playerId, name, emoji, ts: Date.now() },
-    ].slice(-REACTION_CAP);
     this.commit();
   }
 

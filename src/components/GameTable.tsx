@@ -236,6 +236,7 @@ function BettingControls() {
   const me = useGame(selectMe)!;
   const placeBet = useGame((s) => s.placeBet);
   const clearBet = useGame((s) => s.clearBet);
+  const betPending = useGame((s) => s.pending.bet);
   const { minBet, maxBet } = room.config;
   const currentBet = room.round?.bets[me.id];
 
@@ -270,11 +271,11 @@ function BettingControls() {
         </Button>
       </div>
       <div className="flex gap-2">
-        <Button className="flex-1" onClick={() => placeBet(amount)}>
+        <Button className="flex-1" onClick={() => placeBet(amount)} loading={betPending}>
           {currentBet ? `Đổi cược (${currentBet})` : 'Đặt cược'}
         </Button>
         {currentBet != null && (
-          <Button variant="secondary" onClick={clearBet}>
+          <Button variant="secondary" onClick={clearBet} disabled={betPending}>
             Xoá
           </Button>
         )}
@@ -288,8 +289,9 @@ function BettingControls() {
 
 function CloseBettingButton() {
   const closeBetting = useGame((s) => s.closeBetting);
+  const closePending = useGame((s) => s.pending.close);
   return (
-    <Button variant="primary" className="w-full" onClick={closeBetting}>
+    <Button variant="primary" className="w-full" onClick={closeBetting} loading={closePending}>
       Chốt cược & lật bài
     </Button>
   );
@@ -298,13 +300,15 @@ function CloseBettingButton() {
 function RevealControls() {
   const nextRound = useGame((s) => s.nextRound);
   const backToLobby = useGame((s) => s.backToLobby);
+  const nextPending = useGame((s) => s.pending.next);
+  const lobbyPending = useGame((s) => s.pending.lobby);
   return (
     <Controls>
       <div className="flex gap-2">
-        <Button className="flex-1" onClick={nextRound}>
+        <Button className="flex-1" onClick={nextRound} loading={nextPending} disabled={lobbyPending}>
           Ván tiếp
         </Button>
-        <Button variant="secondary" onClick={backToLobby}>
+        <Button variant="secondary" onClick={backToLobby} loading={lobbyPending} disabled={nextPending}>
           Về sảnh
         </Button>
       </div>

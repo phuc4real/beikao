@@ -33,6 +33,7 @@ export function Leaderboard() {
           ↻ Làm mới
         </button>
       </div>
+      <p className="text-xs text-white/40">Lãi ròng · thắng/ván · 💰 ví (chip mang theo giữa các phòng)</p>
 
       {loading ? (
         <p className="py-4 text-center text-sm text-white/40">Đang tải…</p>
@@ -51,11 +52,15 @@ export function Leaderboard() {
                 <span className="w-6 shrink-0 text-center">{RANK[i] ?? i + 1}</span>
                 <span className="truncate">{r.name ?? 'Người chơi'}</span>
               </span>
-              <span className="shrink-0 text-right">
-                <span className={r.total_net >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                  {netLabel(r.total_net)}
+              <span className="flex shrink-0 flex-col items-end leading-tight">
+                <span className="flex items-center gap-2">
+                  <span className={r.total_net >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                    {netLabel(r.total_net)}
+                  </span>
+                  <span className="text-white/40">{r.wins}/{r.rounds_played}</span>
                 </span>
-                <span className="ml-2 text-white/40">{r.wins}/{r.rounds_played}</span>
+                {/* Durable cross-room wallet (chips follow the player between rooms). */}
+                <span className="text-xs text-amber-300/80">💰 {r.balance.toLocaleString()}</span>
               </span>
             </li>
           ))}

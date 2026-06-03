@@ -117,6 +117,5 @@ export interface RoomState {
   /** Completed rounds (full views with revealed hands), newest first — for replay. */
   history: RoundView[];
   chat: ChatMessage[];
-  reactions: ReactionMsg[];
   version: number;
 }

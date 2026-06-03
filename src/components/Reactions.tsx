@@ -22,9 +22,9 @@ export function ReactionBar() {
 
 /** Overlay of recently-sent reactions floating up and fading. */
 export function FloatingReactions() {
-  const reactions = useGame((s) => s.room?.reactions ?? []);
-  // Only animate genuinely recent reactions, so a reconnect snapshot doesn't
-  // replay a burst of old ones.
+  const reactions = useGame((s) => s.reactions);
+  // Only animate genuinely recent reactions (transient broadcast feed, so this
+  // mainly guards against a brief tab-away backlog rendering all at once).
   const now = Date.now();
   const recent = reactions.filter((r) => now - r.ts < 3400);
 

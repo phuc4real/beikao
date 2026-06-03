@@ -265,6 +265,426 @@ function hashStr(s) {
   return h;
 }
 
+// src/features/room/types.ts
+var DEFAULT_CONFIG = {
+  maxPlayers: 16,
+  startingBalance: 1e3,
+  minBet: 10,
+  maxBet: 500,
+  bettingSeconds: 15,
+  mode: "CAO_CAI",
+  baTienPayout: 1,
+  caoPayout: 1,
+  allowRebuy: true
+};
+var MIN_PLAYERS = 2;
+var SPECTATOR_CAP = 50;
+
+// src/features/room/authority.ts
+var CHAT_CAP = 50;
+var HISTORY_CAP = 8;
+var GameAuthority = class {
+  state;
+  timer = null;
+  roundCounter = 0;
+  cb;
+  // Provably-fair: host seed is committed (hashed) before betting and kept
+  // private until REVEAL; con entropy seeds are collected privately during
+  // betting so the cái can't compute the deck early.
+  pendingSeed = null;
+  pendingPlayerSeeds = {};
+  starting = false;
+  useTimers;
+  constructor(opts) {
+    this.cb = opts.callbacks;
+    this.useTimers = opts.useTimers ?? true;
+    if (opts.snapshot) {
+      this.state = opts.snapshot;
+      const s = opts.secrets;
+      this.roundCounter = s?.roundCounter ?? this.deriveRoundCounter(opts.snapshot);
+      this.pendingSeed = s?.pendingSeedHex ? hexToBytes(s.pendingSeedHex) : null;
+      this.pendingPlayerSeeds = s?.pendingPlayerSeeds ? { ...s.pendingPlayerSeeds } : {};
+      return;
+    }
+    const config = { ...DEFAULT_CONFIG, ...opts.config };
+    this.state = {
+      id: opts.roomId,
+      hostId: opts.hostId,
+      caiId: opts.hostId,
+      status: "LOBBY",
+      config,
+      players: [
+        {
+          id: opts.hostId,
+          name: opts.hostName.trim().slice(0, 20) || "C\xE1i",
+          balance: config.startingBalance,
+          ready: true,
+          isCai: true,
+          connected: true
+        }
+      ],
+      spectators: [],
+      round: null,
+      history: [],
+      chat: [],
+      version: 1
+    };
+  }
+  getState() {
+    return this.state;
+  }
+  /** Phase 3: the private state to persist alongside the snapshot. */
+  getSecrets() {
+    return {
+      pendingSeedHex: this.pendingSeed ? bytesToHex(this.pendingSeed) : null,
+      pendingPlayerSeeds: { ...this.pendingPlayerSeeds },
+      roundCounter: this.roundCounter
+    };
+  }
+  /**
+   * Phase 3 (3d): override a seat's chip balance from the player's durable
+   * profile (called by the server right after a JOIN/create so chips follow the
+   * player between rooms). No-op in P2P.
+   */
+  setBalance(playerId, balance) {
+    const p = this.findPlayer(playerId);
+    if (p) {
+      p.balance = balance;
+      this.commit();
+    }
+  }
+  /** Fallback when resuming without persisted secrets (e.g. legacy rows). */
+  deriveRoundCounter(state) {
+    const fromHistory = state.history[0]?.roundNumber ?? 0;
+    return Math.max(state.round?.roundNumber ?? 0, fromHistory);
+  }
+  dispose() {
+    this.clearTimer();
+  }
+  /**
+   * Phase 3 cron entry: close betting if the deadline has passed. P2P uses the
+   * internal `setTimeout` instead; the server calls this from a ~1s tick.
+   * Returns true if it acted (so the caller knows to persist).
+   */
+  tickDeadline(now) {
+    const { status, round } = this.state;
+    if (status === "BETTING" && round?.endsAt != null && now >= round.endsAt) {
+      this.closeBetting();
+      return true;
+    }
+    return false;
+  }
+  // ── connection lifecycle ──────────────────────────────────────────────
+  /** A connection opened or reconnected; create/restore a player or spectator. */
+  join(playerId, name, spectator = false) {
+    const existing = this.findPlayer(playerId);
+    if (existing) {
+      existing.connected = true;
+      this.commit();
+      return;
+    }
+    if (this.state.spectators.some((s) => s.id === playerId)) {
+      this.commit();
+      return;
+    }
+    const connectedCount = this.state.players.filter((p) => p.connected).length;
+    const full = connectedCount >= this.state.config.maxPlayers;
+    if (spectator || full) {
+      if (this.state.spectators.length >= SPECTATOR_CAP) {
+        this.cb.sendTo(playerId, { v: 1, type: "ERROR", code: "ROOM_FULL", reason: "Ph\xF2ng \u0111\xE3 \u0111\u1EA7y (c\u1EA3 ch\u1ED7 xem)" });
+        return;
+      }
+      this.state.spectators.push({ id: playerId, name: this.uniqueName(name) });
+      if (full && !spectator) {
+        this.cb.sendTo(playerId, { v: 1, type: "ERROR", code: "ROOM_FULL", reason: "Ph\xF2ng \u0111\xE3 \u0111\u1EA7y \u2014 b\u1EA1n v\xE0o xem" });
+      }
+      this.commit();
+      return;
+    }
+    this.state.players.push({
+      id: playerId,
+      name: this.uniqueName(name),
+      balance: this.state.config.startingBalance,
+      ready: false,
+      isCai: false,
+      connected: true
+    });
+    this.commit();
+  }
+  /** A connection dropped; keep player seats, drop spectators. */
+  disconnect(playerId) {
+    const p = this.findPlayer(playerId);
+    if (p) {
+      p.connected = false;
+      if (p.id !== this.state.caiId) p.ready = false;
+      this.commit();
+      return;
+    }
+    if (this.state.spectators.some((s) => s.id === playerId)) {
+      this.state.spectators = this.state.spectators.filter((s) => s.id !== playerId);
+      this.commit();
+    }
+  }
+  /**
+   * Phase 3 (presence): reconcile every seat's `connected` flag against the set
+   * of player ids currently present on the Realtime channel, and drop spectators
+   * who left. Many-at-once equivalent of join/disconnect, driven by Realtime
+   * Presence so genuine drops (crash/sleep/network) are detected, not just clean
+   * tab closes. The cái keeps its `ready` flag (same exemption as disconnect()).
+   */
+  reconcilePresence(presentIds) {
+    const present = new Set(presentIds);
+    for (const p of this.state.players) {
+      const online = present.has(p.id);
+      if (p.connected !== online) {
+        p.connected = online;
+        if (!online && p.id !== this.state.caiId) p.ready = false;
+      }
+    }
+    this.state.spectators = this.state.spectators.filter((s) => present.has(s.id));
+    this.commit();
+  }
+  // ── intention handling ────────────────────────────────────────────────
+  /**
+   * Apply one intention. Async because START_ROUND/NEXT_ROUND await the deck
+   * commitment (SHA-256). P2P callers fire-and-forget (the host tab stays alive
+   * and `commit()` broadcasts when it resolves); the stateless Phase-3 server
+   * awaits it so it persists the post-`beginRound` state, not the state before.
+   */
+  async submit(playerId, msg) {
+    const p = this.findPlayer(playerId);
+    switch (msg.type) {
+      case "JOIN":
+        this.join(playerId, msg.name, msg.spectator);
+        return;
+      case "REQUEST_SNAPSHOT":
+        this.cb.sendTo(playerId, { v: 1, type: "SNAPSHOT", state: this.state });
+        return;
+      // Spectators (not seated players) may still chat. (Reactions are ephemeral
+      // and ride Realtime broadcast, so they never reach the authority.)
+      case "CHAT": {
+        const name = p?.name ?? this.findSpectatorName(playerId);
+        if (name) this.addChat(playerId, name, msg.text);
+        return;
+      }
+    }
+    if (!p) return;
+    switch (msg.type) {
+      case "SET_READY":
+        if (this.state.status === "LOBBY" && !p.isCai) {
+          p.ready = msg.ready;
+          this.commit();
+        }
+        return;
+      case "PLACE_BET":
+        this.placeBet(p, msg.amount);
+        return;
+      case "CLEAR_BET":
+        if (this.state.status === "BETTING" && this.state.round && this.state.config.mode === "CAO_CAI") {
+          delete this.state.round.bets[p.id];
+          this.commit();
+        }
+        return;
+      case "PLAYER_SEED":
+        if (this.state.status === "BETTING" && !p.isCai) this.pendingPlayerSeeds[p.id] = msg.seed;
+        return;
+      case "UPDATE_CONFIG":
+        if (p.isCai && this.state.status === "LOBBY") this.applyConfig(msg.config);
+        return;
+      case "START_ROUND":
+        if (p.isCai && this.state.status === "LOBBY") await this.beginRound(playerId);
+        return;
+      case "CLOSE_BETTING":
+        if (p.isCai && this.state.status === "BETTING") this.closeBetting();
+        return;
+      case "NEXT_ROUND":
+        if (p.isCai && this.state.status === "REVEAL") await this.beginRound(playerId);
+        return;
+      case "BACK_TO_LOBBY":
+        if (p.isCai && this.state.status !== "LOBBY") this.toLobby();
+        return;
+    }
+  }
+  // ── betting ───────────────────────────────────────────────────────────
+  placeBet(p, amount) {
+    const { status, round, config } = this.state;
+    if (status !== "BETTING" || !round) return this.reject(p.id, "BAD_STATE", "Kh\xF4ng trong l\u01B0\u1EE3t c\u01B0\u1EE3c");
+    if (config.mode !== "CAO_CAI") return this.reject(p.id, "NOT_ALLOWED", "Ch\u1EBF \u0111\u1ED9 n\xE0y c\u01B0\u1EE3c c\u1ED1 \u0111\u1ECBnh");
+    if (p.isCai) return this.reject(p.id, "NOT_ALLOWED", "C\xE1i kh\xF4ng \u0111\u1EB7t c\u01B0\u1EE3c");
+    if (!p.connected || !p.ready) return this.reject(p.id, "NOT_ALLOWED", "B\u1EA1n ch\u01B0a s\u1EB5n s\xE0ng");
+    if (amount < config.minBet || amount > config.maxBet) {
+      return this.reject(p.id, "BET_REJECTED", `C\u01B0\u1EE3c ph\u1EA3i t\u1EEB ${config.minBet} \u0111\u1EBFn ${config.maxBet}`);
+    }
+    if (amount > p.balance) return this.reject(p.id, "BET_REJECTED", "Kh\xF4ng \u0111\u1EE7 chip");
+    round.bets[p.id] = amount;
+    this.commit();
+  }
+  // ── round lifecycle ───────────────────────────────────────────────────
+  async beginRound(hostId) {
+    if (this.starting) return;
+    const { config } = this.state;
+    const readyParticipants = this.state.players.filter((p) => p.connected && (p.ready || p.isCai));
+    if (config.mode === "CAO_CAI") {
+      const readyCons = readyParticipants.filter((p) => !p.isCai);
+      if (readyCons.length < 1) return this.reject(hostId, "BAD_STATE", "C\u1EA7n \xEDt nh\u1EA5t 1 ng\u01B0\u1EDDi ch\u01A1i s\u1EB5n s\xE0ng");
+    } else if (readyParticipants.length < MIN_PLAYERS) {
+      return this.reject(hostId, "BAD_STATE", `C\u1EA7n \xEDt nh\u1EA5t ${MIN_PLAYERS} ng\u01B0\u1EDDi ch\u01A1i`);
+    }
+    this.starting = true;
+    try {
+      this.pendingSeed = randomSeed(32);
+      this.pendingPlayerSeeds = {};
+      const deckCommitment = await sha256Hex(this.pendingSeed);
+      if (this.state.status === "BETTING") return;
+      this.roundCounter += 1;
+      const bets = {};
+      if (config.mode === "CAO_RUA") {
+        for (const p of readyParticipants) {
+          if (p.balance >= config.minBet) bets[p.id] = config.minBet;
+        }
+      }
+      this.state.round = {
+        roundNumber: this.roundCounter,
+        bets,
+        endsAt: Date.now() + config.bettingSeconds * 1e3,
+        deckCommitment
+      };
+      this.state.status = "BETTING";
+      this.clearTimer();
+      if (this.useTimers) {
+        this.timer = setTimeout(() => this.closeBetting(), config.bettingSeconds * 1e3);
+      }
+      this.commit();
+    } finally {
+      this.starting = false;
+    }
+  }
+  /** Deal, settle, reveal. Called by the betting timer or an early close. */
+  closeBetting() {
+    this.clearTimer();
+    const { round, config } = this.state;
+    if (!round || this.state.status !== "BETTING") return;
+    const participants = this.resolveParticipants();
+    if (participants.length < MIN_PLAYERS) {
+      round.endsAt = null;
+      this.reject(this.state.caiId, "BAD_STATE", "Ch\u01B0a c\xF3 ai \u0111\u1EB7t c\u01B0\u1EE3c \u2014 ch\u01B0a th\u1EC3 ch\u1ED1t");
+      this.commit();
+      return;
+    }
+    if (!deckCanSeat(participants.length)) {
+      round.endsAt = null;
+      this.reject(this.state.caiId, "BAD_STATE", "Qu\xE1 nhi\u1EC1u ng\u01B0\u1EDDi ch\u01A1i cho m\u1ED9t b\u1ED9 b\xE0i");
+      this.commit();
+      return;
+    }
+    const finalSeed = combineSeeds(this.pendingSeed ?? randomSeed(), Object.values(this.pendingPlayerSeeds));
+    const deck = shuffle(createDeck(), finalSeed);
+    const ids = participants.map((p) => p.id);
+    const { hands } = dealFromDeck(deck, ids);
+    const handById = new Map(hands.map((h) => [h.playerId, h.hand]));
+    let result;
+    if (config.mode === "CAO_CAI") {
+      const caiHand = handById.get(this.state.caiId);
+      const cons = participants.filter((p) => p.id !== this.state.caiId).map((p) => ({ playerId: p.id, hand: handById.get(p.id), bet: round.bets[p.id] }));
+      const s = settleCaoCai(this.state.caiId, caiHand, cons, {
+        baTienPayout: config.baTienPayout,
+        caoPayout: config.caoPayout
+      });
+      result = { mode: "CAO_CAI", deltas: s.deltas, outcomes: s.outcomes, roundNumber: round.roundNumber };
+    } else {
+      const s = settlePot(config.minBet, participants.map((p) => ({ playerId: p.id, hand: handById.get(p.id) })));
+      result = { mode: "CAO_RUA", deltas: s.deltas, potWinner: s.potWinner, roundNumber: round.roundNumber };
+    }
+    for (const [pid, delta] of Object.entries(result.deltas)) {
+      const player = this.findPlayer(pid);
+      if (player) player.balance += delta;
+    }
+    const revealed = {};
+    for (const { playerId, hand } of hands) {
+      revealed[playerId] = { cards: hand.cards, score: hand.score, baTien: hand.baTien };
+    }
+    round.hands = revealed;
+    round.result = result;
+    round.endsAt = null;
+    round.dealOrder = ids;
+    round.playerSeeds = { ...this.pendingPlayerSeeds };
+    if (this.pendingSeed) round.hostSeedRevealed = bytesToHex(this.pendingSeed);
+    this.pendingSeed = null;
+    this.pendingPlayerSeeds = {};
+    this.state.status = "REVEAL";
+    this.state.history = [{ ...round }, ...this.state.history].slice(0, HISTORY_CAP);
+    this.commit();
+  }
+  resolveParticipants() {
+    const { round, config } = this.state;
+    if (!round) return [];
+    if (config.mode === "CAO_CAI") {
+      const cai = this.findPlayer(this.state.caiId);
+      const cons = this.state.players.filter(
+        (p) => !p.isCai && p.connected && (round.bets[p.id] ?? 0) > 0
+      );
+      return cai && cons.length > 0 ? [cai, ...cons] : [];
+    }
+    return this.state.players.filter((p) => (round.bets[p.id] ?? 0) > 0);
+  }
+  /** Host edits room settings in the lobby. Validated by the protocol schema. */
+  applyConfig(patch) {
+    const next = { ...this.state.config, ...patch };
+    if (next.minBet > next.maxBet) next.maxBet = next.minBet;
+    this.state.config = next;
+    this.commit();
+  }
+  toLobby() {
+    this.clearTimer();
+    this.pendingSeed = null;
+    this.pendingPlayerSeeds = {};
+    this.state.status = "LOBBY";
+    this.state.round = null;
+    this.commit();
+  }
+  // ── chat ──────────────────────────────────────────────────────────────
+  addChat(playerId, name, text) {
+    this.state.chat = [
+      ...this.state.chat,
+      { id: genId(), playerId, name, text, ts: Date.now() }
+    ].slice(-CHAT_CAP);
+    this.commit();
+  }
+  findSpectatorName(id) {
+    return this.state.spectators.find((s) => s.id === id)?.name;
+  }
+  // ── helpers ───────────────────────────────────────────────────────────
+  findPlayer(id) {
+    return this.state.players.find((p) => p.id === id);
+  }
+  uniqueName(raw) {
+    const base = raw.trim().slice(0, 20) || "Ng\u01B0\u1EDDi ch\u01A1i";
+    const taken = /* @__PURE__ */ new Set([
+      ...this.state.players.map((p) => p.name),
+      ...this.state.spectators.map((s) => s.name)
+    ]);
+    if (!taken.has(base)) return base;
+    for (let i = 2; i < 100; i++) {
+      const candidate = `${base} #${i}`;
+      if (!taken.has(candidate)) return candidate;
+    }
+    return `${base} #${genId().slice(0, 4)}`;
+  }
+  reject(playerId, code, reason) {
+    this.cb.sendTo(playerId, { v: 1, type: "ERROR", code, reason });
+  }
+  clearTimer() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+  commit() {
+    this.state.version += 1;
+    this.cb.broadcast(this.state);
+  }
+};
+
 // node_modules/zod/v3/external.js
 var external_exports = {};
 __export(external_exports, {
@@ -4307,7 +4727,6 @@ var coerce = {
 var NEVER = INVALID;
 
 // src/network/protocol/messages.ts
-var REACTIONS = ["\u{1F602}", "\u{1F525}", "\u{1F631}", "\u{1F44F}", "\u{1F60E}", "\u{1F4B0}", "\u{1F62D}", "\u{1F389}"];
 var intentionSchema = external_exports.discriminatedUnion("type", [
   external_exports.object({ type: external_exports.literal("JOIN"), name: external_exports.string().trim().min(1).max(20), spectator: external_exports.boolean().optional() }),
   external_exports.object({ type: external_exports.literal("SET_READY"), ready: external_exports.boolean() }),
@@ -4319,7 +4738,6 @@ var intentionSchema = external_exports.discriminatedUnion("type", [
   external_exports.object({ type: external_exports.literal("BACK_TO_LOBBY") }),
   external_exports.object({ type: external_exports.literal("CHAT"), text: external_exports.string().trim().min(1).max(200) }),
   external_exports.object({ type: external_exports.literal("PLAYER_SEED"), seed: external_exports.string().regex(/^[0-9a-f]+$/i).min(8).max(128) }),
-  external_exports.object({ type: external_exports.literal("REACTION"), emoji: external_exports.string().min(1).max(8) }),
   external_exports.object({
     type: external_exports.literal("UPDATE_CONFIG"),
     config: external_exports.object({
@@ -4336,441 +4754,6 @@ var intentionSchema = external_exports.discriminatedUnion("type", [
   }),
   external_exports.object({ type: external_exports.literal("REQUEST_SNAPSHOT") })
 ]);
-
-// src/features/room/types.ts
-var DEFAULT_CONFIG = {
-  maxPlayers: 16,
-  startingBalance: 1e3,
-  minBet: 10,
-  maxBet: 500,
-  bettingSeconds: 15,
-  mode: "CAO_CAI",
-  baTienPayout: 1,
-  caoPayout: 1,
-  allowRebuy: true
-};
-var MIN_PLAYERS = 2;
-var SPECTATOR_CAP = 50;
-
-// src/features/room/authority.ts
-var CHAT_CAP = 50;
-var HISTORY_CAP = 50;
-var REACTION_CAP = 24;
-var ALLOWED_EMOJIS = new Set(REACTIONS);
-var GameAuthority = class {
-  state;
-  timer = null;
-  roundCounter = 0;
-  cb;
-  // Provably-fair: host seed is committed (hashed) before betting and kept
-  // private until REVEAL; con entropy seeds are collected privately during
-  // betting so the cái can't compute the deck early.
-  pendingSeed = null;
-  pendingPlayerSeeds = {};
-  starting = false;
-  useTimers;
-  constructor(opts) {
-    this.cb = opts.callbacks;
-    this.useTimers = opts.useTimers ?? true;
-    if (opts.snapshot) {
-      this.state = opts.snapshot;
-      const s = opts.secrets;
-      this.roundCounter = s?.roundCounter ?? this.deriveRoundCounter(opts.snapshot);
-      this.pendingSeed = s?.pendingSeedHex ? hexToBytes(s.pendingSeedHex) : null;
-      this.pendingPlayerSeeds = s?.pendingPlayerSeeds ? { ...s.pendingPlayerSeeds } : {};
-      return;
-    }
-    const config = { ...DEFAULT_CONFIG, ...opts.config };
-    this.state = {
-      id: opts.roomId,
-      hostId: opts.hostId,
-      caiId: opts.hostId,
-      status: "LOBBY",
-      config,
-      players: [
-        {
-          id: opts.hostId,
-          name: opts.hostName.trim().slice(0, 20) || "C\xE1i",
-          balance: config.startingBalance,
-          ready: true,
-          isCai: true,
-          connected: true
-        }
-      ],
-      spectators: [],
-      round: null,
-      history: [],
-      chat: [],
-      reactions: [],
-      version: 1
-    };
-  }
-  getState() {
-    return this.state;
-  }
-  /** Phase 3: the private state to persist alongside the snapshot. */
-  getSecrets() {
-    return {
-      pendingSeedHex: this.pendingSeed ? bytesToHex(this.pendingSeed) : null,
-      pendingPlayerSeeds: { ...this.pendingPlayerSeeds },
-      roundCounter: this.roundCounter
-    };
-  }
-  /**
-   * Phase 3 (3d): override a seat's chip balance from the player's durable
-   * profile (called by the server right after a JOIN/create so chips follow the
-   * player between rooms). No-op in P2P.
-   */
-  setBalance(playerId, balance) {
-    const p = this.findPlayer(playerId);
-    if (p) {
-      p.balance = balance;
-      this.commit();
-    }
-  }
-  /** Fallback when resuming without persisted secrets (e.g. legacy rows). */
-  deriveRoundCounter(state) {
-    const fromHistory = state.history[0]?.roundNumber ?? 0;
-    return Math.max(state.round?.roundNumber ?? 0, fromHistory);
-  }
-  dispose() {
-    this.clearTimer();
-  }
-  /**
-   * Phase 3 cron entry: close betting if the deadline has passed. P2P uses the
-   * internal `setTimeout` instead; the server calls this from a ~1s tick.
-   * Returns true if it acted (so the caller knows to persist).
-   */
-  tickDeadline(now) {
-    const { status, round } = this.state;
-    if (status === "BETTING" && round?.endsAt != null && now >= round.endsAt) {
-      this.closeBetting();
-      return true;
-    }
-    return false;
-  }
-  // ── connection lifecycle ──────────────────────────────────────────────
-  /** A connection opened or reconnected; create/restore a player or spectator. */
-  join(playerId, name, spectator = false) {
-    const existing = this.findPlayer(playerId);
-    if (existing) {
-      existing.connected = true;
-      this.commit();
-      return;
-    }
-    if (this.state.spectators.some((s) => s.id === playerId)) {
-      this.commit();
-      return;
-    }
-    const connectedCount = this.state.players.filter((p) => p.connected).length;
-    const full = connectedCount >= this.state.config.maxPlayers;
-    if (spectator || full) {
-      if (this.state.spectators.length >= SPECTATOR_CAP) {
-        this.cb.sendTo(playerId, { v: 1, type: "ERROR", code: "ROOM_FULL", reason: "Ph\xF2ng \u0111\xE3 \u0111\u1EA7y (c\u1EA3 ch\u1ED7 xem)" });
-        return;
-      }
-      this.state.spectators.push({ id: playerId, name: this.uniqueName(name) });
-      if (full && !spectator) {
-        this.cb.sendTo(playerId, { v: 1, type: "ERROR", code: "ROOM_FULL", reason: "Ph\xF2ng \u0111\xE3 \u0111\u1EA7y \u2014 b\u1EA1n v\xE0o xem" });
-      }
-      this.commit();
-      return;
-    }
-    this.state.players.push({
-      id: playerId,
-      name: this.uniqueName(name),
-      balance: this.state.config.startingBalance,
-      ready: false,
-      isCai: false,
-      connected: true
-    });
-    this.commit();
-  }
-  /** A connection dropped; keep player seats, drop spectators. */
-  disconnect(playerId) {
-    const p = this.findPlayer(playerId);
-    if (p) {
-      p.connected = false;
-      if (p.id !== this.state.caiId) p.ready = false;
-      this.commit();
-      return;
-    }
-    if (this.state.spectators.some((s) => s.id === playerId)) {
-      this.state.spectators = this.state.spectators.filter((s) => s.id !== playerId);
-      this.commit();
-    }
-  }
-  /**
-   * Phase 3 (presence): reconcile every seat's `connected` flag against the set
-   * of player ids currently present on the Realtime channel, and drop spectators
-   * who left. Many-at-once equivalent of join/disconnect, driven by Realtime
-   * Presence so genuine drops (crash/sleep/network) are detected, not just clean
-   * tab closes. The cái keeps its `ready` flag (same exemption as disconnect()).
-   */
-  reconcilePresence(presentIds) {
-    const present = new Set(presentIds);
-    for (const p of this.state.players) {
-      const online = present.has(p.id);
-      if (p.connected !== online) {
-        p.connected = online;
-        if (!online && p.id !== this.state.caiId) p.ready = false;
-      }
-    }
-    this.state.spectators = this.state.spectators.filter((s) => present.has(s.id));
-    this.commit();
-  }
-  // ── intention handling ────────────────────────────────────────────────
-  /**
-   * Apply one intention. Async because START_ROUND/NEXT_ROUND await the deck
-   * commitment (SHA-256). P2P callers fire-and-forget (the host tab stays alive
-   * and `commit()` broadcasts when it resolves); the stateless Phase-3 server
-   * awaits it so it persists the post-`beginRound` state, not the state before.
-   */
-  async submit(playerId, msg) {
-    const p = this.findPlayer(playerId);
-    switch (msg.type) {
-      case "JOIN":
-        this.join(playerId, msg.name, msg.spectator);
-        return;
-      case "REQUEST_SNAPSHOT":
-        this.cb.sendTo(playerId, { v: 1, type: "SNAPSHOT", state: this.state });
-        return;
-      // Spectators (not seated players) may still chat and react.
-      case "CHAT": {
-        const name = p?.name ?? this.findSpectatorName(playerId);
-        if (name) this.addChat(playerId, name, msg.text);
-        return;
-      }
-      case "REACTION": {
-        const name = p?.name ?? this.findSpectatorName(playerId);
-        if (name) this.addReaction(playerId, name, msg.emoji);
-        return;
-      }
-    }
-    if (!p) return;
-    switch (msg.type) {
-      case "SET_READY":
-        if (this.state.status === "LOBBY" && !p.isCai) {
-          p.ready = msg.ready;
-          this.commit();
-        }
-        return;
-      case "PLACE_BET":
-        this.placeBet(p, msg.amount);
-        return;
-      case "CLEAR_BET":
-        if (this.state.status === "BETTING" && this.state.round && this.state.config.mode === "CAO_CAI") {
-          delete this.state.round.bets[p.id];
-          this.commit();
-        }
-        return;
-      case "PLAYER_SEED":
-        if (this.state.status === "BETTING" && !p.isCai) this.pendingPlayerSeeds[p.id] = msg.seed;
-        return;
-      case "UPDATE_CONFIG":
-        if (p.isCai && this.state.status === "LOBBY") this.applyConfig(msg.config);
-        return;
-      case "START_ROUND":
-        if (p.isCai && this.state.status === "LOBBY") await this.beginRound(playerId);
-        return;
-      case "CLOSE_BETTING":
-        if (p.isCai && this.state.status === "BETTING") this.closeBetting();
-        return;
-      case "NEXT_ROUND":
-        if (p.isCai && this.state.status === "REVEAL") await this.beginRound(playerId);
-        return;
-      case "BACK_TO_LOBBY":
-        if (p.isCai && this.state.status !== "LOBBY") this.toLobby();
-        return;
-    }
-  }
-  // ── betting ───────────────────────────────────────────────────────────
-  placeBet(p, amount) {
-    const { status, round, config } = this.state;
-    if (status !== "BETTING" || !round) return this.reject(p.id, "BAD_STATE", "Kh\xF4ng trong l\u01B0\u1EE3t c\u01B0\u1EE3c");
-    if (config.mode !== "CAO_CAI") return this.reject(p.id, "NOT_ALLOWED", "Ch\u1EBF \u0111\u1ED9 n\xE0y c\u01B0\u1EE3c c\u1ED1 \u0111\u1ECBnh");
-    if (p.isCai) return this.reject(p.id, "NOT_ALLOWED", "C\xE1i kh\xF4ng \u0111\u1EB7t c\u01B0\u1EE3c");
-    if (!p.connected || !p.ready) return this.reject(p.id, "NOT_ALLOWED", "B\u1EA1n ch\u01B0a s\u1EB5n s\xE0ng");
-    if (amount < config.minBet || amount > config.maxBet) {
-      return this.reject(p.id, "BET_REJECTED", `C\u01B0\u1EE3c ph\u1EA3i t\u1EEB ${config.minBet} \u0111\u1EBFn ${config.maxBet}`);
-    }
-    if (amount > p.balance) return this.reject(p.id, "BET_REJECTED", "Kh\xF4ng \u0111\u1EE7 chip");
-    round.bets[p.id] = amount;
-    this.commit();
-  }
-  // ── round lifecycle ───────────────────────────────────────────────────
-  async beginRound(hostId) {
-    if (this.starting) return;
-    const { config } = this.state;
-    const readyParticipants = this.state.players.filter((p) => p.connected && (p.ready || p.isCai));
-    if (config.mode === "CAO_CAI") {
-      const readyCons = readyParticipants.filter((p) => !p.isCai);
-      if (readyCons.length < 1) return this.reject(hostId, "BAD_STATE", "C\u1EA7n \xEDt nh\u1EA5t 1 ng\u01B0\u1EDDi ch\u01A1i s\u1EB5n s\xE0ng");
-    } else if (readyParticipants.length < MIN_PLAYERS) {
-      return this.reject(hostId, "BAD_STATE", `C\u1EA7n \xEDt nh\u1EA5t ${MIN_PLAYERS} ng\u01B0\u1EDDi ch\u01A1i`);
-    }
-    this.starting = true;
-    try {
-      this.pendingSeed = randomSeed(32);
-      this.pendingPlayerSeeds = {};
-      const deckCommitment = await sha256Hex(this.pendingSeed);
-      if (this.state.status === "BETTING") return;
-      this.roundCounter += 1;
-      const bets = {};
-      if (config.mode === "CAO_RUA") {
-        for (const p of readyParticipants) {
-          if (p.balance >= config.minBet) bets[p.id] = config.minBet;
-        }
-      }
-      this.state.round = {
-        roundNumber: this.roundCounter,
-        bets,
-        endsAt: Date.now() + config.bettingSeconds * 1e3,
-        deckCommitment
-      };
-      this.state.status = "BETTING";
-      this.clearTimer();
-      if (this.useTimers) {
-        this.timer = setTimeout(() => this.closeBetting(), config.bettingSeconds * 1e3);
-      }
-      this.commit();
-    } finally {
-      this.starting = false;
-    }
-  }
-  /** Deal, settle, reveal. Called by the betting timer or an early close. */
-  closeBetting() {
-    this.clearTimer();
-    const { round, config } = this.state;
-    if (!round || this.state.status !== "BETTING") return;
-    const participants = this.resolveParticipants();
-    if (participants.length < MIN_PLAYERS) {
-      round.endsAt = null;
-      this.reject(this.state.caiId, "BAD_STATE", "Ch\u01B0a c\xF3 ai \u0111\u1EB7t c\u01B0\u1EE3c \u2014 ch\u01B0a th\u1EC3 ch\u1ED1t");
-      this.commit();
-      return;
-    }
-    if (!deckCanSeat(participants.length)) {
-      round.endsAt = null;
-      this.reject(this.state.caiId, "BAD_STATE", "Qu\xE1 nhi\u1EC1u ng\u01B0\u1EDDi ch\u01A1i cho m\u1ED9t b\u1ED9 b\xE0i");
-      this.commit();
-      return;
-    }
-    const finalSeed = combineSeeds(this.pendingSeed ?? randomSeed(), Object.values(this.pendingPlayerSeeds));
-    const deck = shuffle(createDeck(), finalSeed);
-    const ids = participants.map((p) => p.id);
-    const { hands } = dealFromDeck(deck, ids);
-    const handById = new Map(hands.map((h) => [h.playerId, h.hand]));
-    let result;
-    if (config.mode === "CAO_CAI") {
-      const caiHand = handById.get(this.state.caiId);
-      const cons = participants.filter((p) => p.id !== this.state.caiId).map((p) => ({ playerId: p.id, hand: handById.get(p.id), bet: round.bets[p.id] }));
-      const s = settleCaoCai(this.state.caiId, caiHand, cons, {
-        baTienPayout: config.baTienPayout,
-        caoPayout: config.caoPayout
-      });
-      result = { mode: "CAO_CAI", deltas: s.deltas, outcomes: s.outcomes, roundNumber: round.roundNumber };
-    } else {
-      const s = settlePot(config.minBet, participants.map((p) => ({ playerId: p.id, hand: handById.get(p.id) })));
-      result = { mode: "CAO_RUA", deltas: s.deltas, potWinner: s.potWinner, roundNumber: round.roundNumber };
-    }
-    for (const [pid, delta] of Object.entries(result.deltas)) {
-      const player = this.findPlayer(pid);
-      if (player) player.balance += delta;
-    }
-    const revealed = {};
-    for (const { playerId, hand } of hands) {
-      revealed[playerId] = { cards: hand.cards, score: hand.score, baTien: hand.baTien };
-    }
-    round.hands = revealed;
-    round.result = result;
-    round.endsAt = null;
-    round.dealOrder = ids;
-    round.playerSeeds = { ...this.pendingPlayerSeeds };
-    if (this.pendingSeed) round.hostSeedRevealed = bytesToHex(this.pendingSeed);
-    this.pendingSeed = null;
-    this.pendingPlayerSeeds = {};
-    this.state.status = "REVEAL";
-    this.state.history = [{ ...round }, ...this.state.history].slice(0, HISTORY_CAP);
-    this.commit();
-  }
-  resolveParticipants() {
-    const { round, config } = this.state;
-    if (!round) return [];
-    if (config.mode === "CAO_CAI") {
-      const cai = this.findPlayer(this.state.caiId);
-      const cons = this.state.players.filter(
-        (p) => !p.isCai && p.connected && (round.bets[p.id] ?? 0) > 0
-      );
-      return cai && cons.length > 0 ? [cai, ...cons] : [];
-    }
-    return this.state.players.filter((p) => (round.bets[p.id] ?? 0) > 0);
-  }
-  /** Host edits room settings in the lobby. Validated by the protocol schema. */
-  applyConfig(patch) {
-    const next = { ...this.state.config, ...patch };
-    if (next.minBet > next.maxBet) next.maxBet = next.minBet;
-    this.state.config = next;
-    this.commit();
-  }
-  toLobby() {
-    this.clearTimer();
-    this.pendingSeed = null;
-    this.pendingPlayerSeeds = {};
-    this.state.status = "LOBBY";
-    this.state.round = null;
-    this.commit();
-  }
-  // ── chat ──────────────────────────────────────────────────────────────
-  addChat(playerId, name, text) {
-    this.state.chat = [
-      ...this.state.chat,
-      { id: genId(), playerId, name, text, ts: Date.now() }
-    ].slice(-CHAT_CAP);
-    this.commit();
-  }
-  addReaction(playerId, name, emoji) {
-    if (!ALLOWED_EMOJIS.has(emoji)) return;
-    this.state.reactions = [
-      ...this.state.reactions,
-      { id: genId(), playerId, name, emoji, ts: Date.now() }
-    ].slice(-REACTION_CAP);
-    this.commit();
-  }
-  findSpectatorName(id) {
-    return this.state.spectators.find((s) => s.id === id)?.name;
-  }
-  // ── helpers ───────────────────────────────────────────────────────────
-  findPlayer(id) {
-    return this.state.players.find((p) => p.id === id);
-  }
-  uniqueName(raw) {
-    const base = raw.trim().slice(0, 20) || "Ng\u01B0\u1EDDi ch\u01A1i";
-    const taken = /* @__PURE__ */ new Set([
-      ...this.state.players.map((p) => p.name),
-      ...this.state.spectators.map((s) => s.name)
-    ]);
-    if (!taken.has(base)) return base;
-    for (let i = 2; i < 100; i++) {
-      const candidate = `${base} #${i}`;
-      if (!taken.has(candidate)) return candidate;
-    }
-    return `${base} #${genId().slice(0, 4)}`;
-  }
-  reject(playerId, code, reason) {
-    this.cb.sendTo(playerId, { v: 1, type: "ERROR", code, reason });
-  }
-  clearTimer() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-  }
-  commit() {
-    this.state.version += 1;
-    this.cb.broadcast(this.state);
-  }
-};
 export {
   DEFAULT_CONFIG,
   GameAuthority,

@@ -6,7 +6,7 @@
 > **Game:** *Bài cào* (also *Cào*, *3 cây* / "three-card") — a fast Vietnamese gambling card game.
 > Rules source: https://vi.wikipedia.org/wiki/Bài_cào
 >
-> ⚠️ **Note:** `TDD.md` and `project_idea.md` still describe *Baccarat* (the project's earlier direction). The game has changed to **Bài cào**; those documents need the same pivot — the Baccarat engine (Player/Banker hands, drawing tableau) does **not** apply here.
+> **As-built note:** the implemented backend is **Supabase** (server-authoritative — Postgres + Realtime + Edge Functions). The original host-authoritative **P2P/WebRTC (PeerJS)** transport has been removed; where this doc says "host" it now means the room creator / **cái**, who is a regular participant, not the authority. The gameplay and rules are unchanged. See [TDD.md §19](./TDD.md#19-phase-3--supabase-backend-migration).
 
 ---
 
@@ -164,7 +164,7 @@ Based on the three traditional Bài cào variants:
 
 | Mode | VN name | Status | Description |
 | --- | --- | --- | --- |
-| **Dealer** | **Cào cái** | MVP (default) | Host is the cái; each con bets individually against the cái and is settled separately. Maps directly to host-authoritative play. |
+| **Dealer** | **Cào cái** | MVP (default) | The room creator is the cái; each con bets individually against the cái and is settled separately. The fully-driven default mode. |
 | **Pot / all-in** | **Cào rùa** | MVP | Everyone antes an equal amount; the single highest hand takes the whole pot. No dealer advantage. |
 | **Challenge** | **Cào thách** | Phase 2 | Players may privately wager head-to-head against each other in addition to the table. |
 | **Casual (trust)** | — | MVP | Provably-fair disabled; fastest. |
@@ -297,7 +297,7 @@ Accessibility: color-blind-safe outcome indicators (icons + text + suit symbols,
 - A room can be created and a second player joined in **< 30 seconds**.
 - A full round completes in **< 35 seconds**.
 - Bài cào rules are **100% correct** (scoring, special hands, suit tie-breaks) — verified by unit tests.
-- Playable on a mid-range phone over mobile data (requires TURN — see TDD).
+- Playable on a mid-range phone over mobile data (Supabase Realtime over HTTPS/WebSocket — no WebRTC/TURN required).
 
 ---
 

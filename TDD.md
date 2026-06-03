@@ -519,7 +519,7 @@ on push to main:
 | --- | --- |
 | **MVP** | CaoEngine (scoring + ba tiên + suit tie-break) + tests, Cào cái & Cào rùa settlement, PeerJS star transport + TURN, host-authoritative state machine, host-as-cái with strict separation, betting/timer/limits, chat, history, reconnection, graceful host-leave, vi/en UI, Pages deploy. |
 | **Phase 2** | Provably-fair commit–reveal + verify UI, Cào thách (private challenges), rotating cái, bonus multipliers, spectator, reactions, replay, host migration. |
-| **Phase 3** (3a–3e built) | **Supabase backend migration** (§19): server-authoritative engine in Edge Functions, Postgres state, Realtime transport, server RNG, anonymous Auth, durable cross-room balances, leaderboard, active room discovery. Supabase is the default backend; the host-as-authority + TURN model is kept only as a fallback. *(Tournaments + persistent round history remain.)* |
+| **Phase 3** (3a–3e complete) | **Supabase backend migration** (§19): server-authoritative engine in Edge Functions, Postgres state, Realtime transport, server RNG, anonymous Auth, durable cross-room balances, leaderboard, active room discovery. Supabase is now the **only** backend — the host-as-authority + PeerJS/TURN P2P transport has been removed. *(Tournaments + persistent round history remain.)* |
 
 ---
 
@@ -637,8 +637,8 @@ JOIN / BET / READY / START …            REVEAL / SETTLE …
    store applies snapshot/delta            row update fans out to all room subscribers
 ```
 
-- **Intentions → Edge Function RPC.** One function per intention (`join-room`, `set-ready`, `place-bet`, `clear-bet`, `start-round`, `next-round`, `update-config`, `send-chat`, `react`). Each validates with the existing Zod schemas, checks the state machine, mutates in a transaction, and returns `{ ok }` / a typed error. Clients still send **intentions, never results** — unchanged invariant.
-- **State → Realtime.** Clients subscribe to their room's changes on `players`, `rounds`, `bets`, `chat`. `SupabaseSession` maps incoming row changes into the existing `RoomState` shape and feeds the store via the same `onState` hook used today. Ephemeral, non-persisted events (reactions, typing) go over Realtime **Broadcast** instead of table writes.
+- **Intentions → Edge Function RPC.** As built, a single `intent` Edge Function handles every state-mutating intention (hydrate authority → submit → persist); it validates with the existing Zod schemas, checks the state machine, and returns `{ ok, state, server }` / a typed error. **Reactions are the one exception:** they're ephemeral, so they do *not* go through `intent` at all — there is no `react` intention or RPC. Clients still send **intentions, never results** — unchanged invariant.
+- **State → Realtime.** Clients subscribe to their room's `rooms.state` changes; `SupabaseSession` feeds the store via the same `onState` hook used today. Ephemeral, non-persisted events (**reactions** — implemented; typing — future) go over Realtime **Broadcast** instead of table writes: `SupabaseSession.sendReaction` broadcasts a palette-checked `ReactionMsg` over the open socket and echoes locally; receivers re-validate and push to a transient store feed. No Edge Function, no Postgres write, no full-state rebroadcast.
 
 ### 19.6 Hidden hands under RLS (the critical security detail)
 
@@ -675,7 +675,7 @@ Because rooms are now **rows**, "browse and join" becomes almost free — the fe
 | **3b — Server authority** | Edge Functions for every intention; port `GameAuthority`'s state machine + validation; scheduled deal/settle function; server RNG. | Authority logic moves off the browser. |
 | **3c — `SupabaseSession`** | New `Session` impl: Realtime subscribe → `RoomState`; RPC for `send`. Feature-flag to switch transport. | **Store + UI untouched.** Run P2P and Supabase paths side by side behind a flag. |
 | **3d — Accounts & discovery** ✅ | Anonymous Supabase Auth identity (persisted, upgradeable); durable cross-room balances; leaderboard (`profiles`/`leaderboard`); **active room discovery** — the public lobby browser (§19.9). *(Persistent round history + tournaments still open.)* | The features impossible under P2P. |
-| **3e — Default to Supabase** ✅ | `ACTIVE_BACKEND` defaults to `supabase` whenever configured; PeerJS/TURN kept as an opt-in fallback (`VITE_BACKEND=p2p`) rather than deleted, so the host-migration code (§10.2) is simply unused under Supabase. | TURN cost goes to zero on the default path. |
+| **3e — Supabase only** ✅ | Supabase is the sole backend. The PeerJS/TURN P2P transport, the `VITE_BACKEND` flag, and the host-migration code (§10.2) have been **removed** — there is no P2P fallback to maintain. | TURN cost is zero; one transport to maintain. |
 
 ### 19.11 Cost & infra trade-off
 

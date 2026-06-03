@@ -15,6 +15,8 @@ export function Lobby() {
   const startRound = useGame((s) => s.startRound);
   const leave = useGame((s) => s.leave);
   const isSpectator = useGame(selectIsSpectator);
+  const readyPending = useGame((s) => s.pending.ready);
+  const startPending = useGame((s) => s.pending.start);
   const [showSettings, setShowSettings] = useState(false);
 
   const connected = room.players.filter((p) => p.connected);
@@ -97,12 +99,17 @@ export function Lobby() {
 
       <div className="flex gap-3">
         {!isHost && me && (
-          <Button variant={me.ready ? 'secondary' : 'primary'} className="flex-1" onClick={() => setReady(!me.ready)}>
+          <Button
+            variant={me.ready ? 'secondary' : 'primary'}
+            className="flex-1"
+            loading={readyPending}
+            onClick={() => setReady(!me.ready)}
+          >
             {me.ready ? 'Huỷ sẵn sàng' : 'Sẵn sàng'}
           </Button>
         )}
         {isHost && (
-          <Button className="flex-1" onClick={startRound} disabled={!canStart}>
+          <Button className="flex-1" onClick={startRound} disabled={!canStart} loading={startPending}>
             {canStart ? 'Chia bài' : 'Chờ người chơi sẵn sàng…'}
           </Button>
         )}

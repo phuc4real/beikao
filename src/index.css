@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-tap-highlight-color: transparent;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ── Card animations ───────────────────────────────────────────────────── */
+
+/* "Chia bài": cards drop/scale into their seat, staggered for a dealt cascade. */
+@keyframes deal-in {
+  from {
+    opacity: 0;
+    transform: translateY(-36px) scale(0.8) rotate(-6deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.card3d {
+  perspective: 700px;
+}
+
+/* "Lật bài": 3D flip from face-down (rotateY 0) to face-up (rotateY 180). */
+.flip-inner {
+  transform-style: preserve-3d;
+  transform: rotateY(0deg);
+}
+.flip-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+.flip-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.flip-face.flip-front {
+  transform: rotateY(180deg);
+}
+
+/* Floating emoji reactions drifting up and fading out. */
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.6);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-130px) scale(1.15);
+  }
+}
+
+.float-up {
+  animation: float-up 3.4s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .deal-in {
+    animation: deal-in 0.4s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+  }
+  .flip-inner {
+    transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+}

@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import type { RoomConfig, RoomState } from '@/features/room/types';
 import type { Intention } from '@/network/protocol/messages';
-import { HostSession } from '@/app/session/hostSession';
-import { ClientSession } from '@/app/session/clientSession';
+import { SupabaseSession } from '@/app/session/supabaseSession';
+import { isSupabaseConfigured } from '@/network/supabase/client';
+import { ensureIdentity } from '@/network/supabase/auth';
 import type { ConnStatus, Session, SessionHooks } from '@/app/session/types';
 import { genRoomCode } from '@/utils/id';
-import { clearSession, getPlayerId, loadSession, saveSession, setStoredName } from '@/utils/storage';
+import { clearSession, loadSession, saveSession, setStoredName } from '@/utils/storage';
 
 interface AppState {
   room: RoomState | null;
@@ -16,7 +17,7 @@ interface AppState {
   /** Transient notice (bet rejected, etc.) shown then cleared by the UI. */
   notice: string | null;
 
-  createRoom: (name: string, config?: Partial<RoomConfig>) => void;
+  createRoom: (name: string, config?: Partial<RoomConfig>, isPublic?: boolean) => void;
   joinRoom: (code: string, name: string, asSpectator?: boolean) => void;
   /** Auto-rejoin a stored room after a page reload (clients only). */
   tryReconnect: () => boolean;
@@ -83,36 +84,52 @@ export const useGame = create<AppState>((set, get) => {
     fatal: null,
     notice: null,
 
-    createRoom: (name, config) => {
+    createRoom: async (name, config, isPublic = true) => {
       session?.leave();
+      if (!isSupabaseConfigured()) {
+        set({ status: 'error', fatal: 'Cần cấu hình Supabase (VITE_SUPABASE_URL / ANON_KEY).' });
+        return;
+      }
       const roomId = genRoomCode();
-      const playerId = getPlayerId();
       setStoredName(name);
-      // Host authority state can't survive a reload, so don't mark the session
-      // as rejoinable — a host reload starts fresh.
+      set({ status: 'connecting', fatal: null, notice: null, room: null });
+      // The id is the (anonymous) auth uid; resolving it is async.
+      const playerId = await ensureIdentity();
+      set({ me: { playerId, name } });
+      // Server-authoritative: room state is durable, so a host CAN rejoin after a
+      // reload (handled in tryReconnect as a normal JOIN). `isPublic` controls
+      // whether the room is listed in the discovery browser (§19.9).
       saveSession({ roomId, name, isHost: true, spectator: false });
-      set({ status: 'connecting', fatal: null, notice: null, me: { playerId, name }, room: null });
-      session = new HostSession(roomId, playerId, name, config ?? {}, hooksWithSessionGuard(name));
+      session = new SupabaseSession(
+        { roomId, playerId, name, role: 'host', config: config ?? {}, isPublic },
+        hooksWithSessionGuard(name),
+      );
     },
 
-    joinRoom: (code, name, asSpectator = false) => {
+    joinRoom: async (code, name, asSpectator = false) => {
       session?.leave();
+      if (!isSupabaseConfigured()) {
+        set({ status: 'error', fatal: 'Cần cấu hình Supabase (VITE_SUPABASE_URL / ANON_KEY).' });
+        return;
+      }
       const roomId = code.trim().toUpperCase();
-      const playerId = getPlayerId();
       setStoredName(name);
       saveSession({ roomId, name, isHost: false, spectator: asSpectator });
-      set({ status: 'connecting', fatal: null, notice: null, me: { playerId, name }, room: null });
-      session = new ClientSession(roomId, playerId, name, asSpectator, hooksWithSessionGuard(name));
+      set({ status: 'connecting', fatal: null, notice: null, room: null });
+      const playerId = await ensureIdentity();
+      set({ me: { playerId, name } });
+      session = new SupabaseSession(
+        { roomId, playerId, name, role: 'client', spectator: asSpectator },
+        hooksWithSessionGuard(name),
+      );
     },
 
     tryReconnect: () => {
       const stored = loadSession();
-      // Only clients can rejoin — a host's authoritative room is gone on reload.
-      if (!stored || stored.isHost) {
-        clearSession();
-        return false;
-      }
-      get().joinRoom(stored.roomId, stored.name, stored.spectator);
+      if (!stored) return false;
+      // State is durable on the server, so anyone (incl. the cái) rejoins via a
+      // normal JOIN — the server matches their existing seat by playerId.
+      void get().joinRoom(stored.roomId, stored.name, stored.spectator);
       return true;
     },
 

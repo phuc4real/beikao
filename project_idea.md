@@ -6,6 +6,8 @@
 
 ## Overview
 
+> **As-built note:** this doc captures the original P2P/WebRTC pitch. The project has since migrated to a **Supabase server-authoritative backend** (the PeerJS/WebRTC layer was removed); see [TDD.md §19](./TDD.md#19-phase-3--supabase-backend-migration). The gameplay and rules below are unchanged.
+
 A lightweight multiplayer **Bài cào** game that can be deployed entirely on GitHub Pages without managing a dedicated backend server.
 
 Each player is dealt **3 cards**, scores the **last digit** of their card total (the best score, 9, is called **"cào"**), and the highest hand wins. It's pure chance, fast, and social.
@@ -22,6 +24,7 @@ The application uses WebRTC (PeerJS) for peer-to-peer communication and follows 
 
 * Create room
 * Join room using room code
+* Browse & join active rooms from a live public list (Phase 3 — see [TDD.md §19.9](./TDD.md#19-phase-3--supabase-backend-migration))
 * Support 2–16 players (the host plays as the **cái**); traditional Bài cào allows up to 17
 * Bài cào game logic: 3-card deal, last-digit scoring, special hands, suit tie-breaks
 * Real-time betting with a betting timer
@@ -253,11 +256,16 @@ Ván 12               Đặt cược: 0:08
 * Spectator mode, emoji reactions, replay
 * Host migration
 
-## Phase 3 — dedicated backend
+## Phase 3 — Supabase backend migration
 
-* ASP.NET Core + SignalR + PostgreSQL + Redis
-* Server-side RNG (removes host-cheating entirely)
-* Tournaments, global leaderboard, authentication, persistent accounts
+Move the authority off a player's browser and onto a **server-authoritative Supabase backend** — see [TDD.md §19](./TDD.md#19-phase-3--supabase-backend-migration).
+
+* **Supabase** = Postgres (state + durable balances) + Realtime (transport, replaces WebRTC) + Edge Functions (the authority, running the *same* `features/cao/` engine) + Auth (accounts).
+* **Server-side RNG** inside an Edge Function removes the host-cheating class entirely — no human holds the seed or sees a hidden hand, so commit–reveal becomes optional.
+* Drops the signaling broker **and** the TURN relay (no WebRTC) — fixes restrictive-network connectivity and the one real cost item.
+* Reuse, not rewrite: the pure engine runs unchanged server-side, and a new `SupabaseSession` slots into the existing `Session` interface so the store/UI are untouched.
+* Unlocks persistent accounts, durable cross-session balances, global leaderboard, and tournaments.
+* **Active room discovery** — because rooms become Postgres rows, the Home page can show a **live public room browser** (name, cái, mode, players) for one-click join, no code needed. Public by default; the host can mark a room private (code-only). Pure P2P can't do this at all — no client can list rooms living in other browsers.
 
 ---
 

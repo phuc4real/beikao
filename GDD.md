@@ -140,7 +140,7 @@ Money is tracked in **integer chip units** (no floats). No real progression/leve
 - **Fixed cái** (default MVP) — the host stays cái every round.
 - **Rotating cái** (Phase 2) — the cái seat passes around the table each round (the *authority* still runs on the host's machine; only the in-game *dealer hand/bank* role rotates). Common in Cào cái play so the house edge is shared.
 
-**Host-only controls:** start round, pause to lobby, kick player, room settings (mode, bet limits, timer, bonuses, cái rotation), close room.
+**Host-only controls:** start round, pause to lobby, kick player, room settings (mode, bet limits, timer, bonuses, cái rotation, **room visibility** — public/private, Phase 3), close room.
 
 ---
 
@@ -152,6 +152,7 @@ Since a *player* is the cái and controls the deck, the game must feel fair and 
 - **The cái's hand is dealt from the same deck/shuffle as everyone else** — the dealer can't deal themselves a better hand.
 - **Provably-fair badge (Phase 2):** before betting opens, the host publishes a sealed hash of the shuffled deck; after the round, the seed (mixed with every player's own random seed) is revealed so anyone can verify the deck — and the cái's own hand — were not altered after seeing bets. A ✓ badge appears on verified rounds.
 - **MVP trust model:** if provably-fair is off, the UI clearly states "Casual mode — the cái runs the deck." This sets expectations for friend-group play.
+- **Server-dealt (Phase 3):** once the backend migrates to Supabase, the deck and RNG live on a server — no player, not even the cái, ever holds the seed or sees a hidden hand. The host-can-cheat question disappears entirely (commit–reveal becomes an optional verifiability nicety). See [TDD.md §19](./TDD.md#19-phase-3--supabase-backend-migration).
 
 See [TDD.md → Fairness](./TDD.md#7-fairness--anti-cheat) for the cryptographic detail.
 
@@ -176,7 +177,8 @@ Based on the three traditional Bài cào variants:
 
 ### 9.1 Screens
 ```text
-Home ──► (Create | Join) ──► Lobby ──► Game Table ──► (Results overlay) ──► Lobby/Game
+Home ──► (Create | Join by code | Browse rooms*) ──► Lobby ──► Game Table ──► (Results overlay) ──► Lobby/Game
+                              (* Browse rooms = active room discovery, Phase 3 — §9.6)
 ```
 
 ### 9.2 Home
@@ -231,6 +233,26 @@ Ván 12                    Đặt cược còn: 0:08
 
 Shows every hand flipping simultaneously, each player's score (or special hand), the tie-break reason when relevant, and each player's net chip change vs. the cái.
 
+### 9.6 Room browser — active room discovery (Phase 3)
+
+A live, self-updating list of joinable rooms so players don't need a code. Available once the backend lands (Supabase) — pure P2P has no shared directory of rooms to list. See [TDD.md §19.9](./TDD.md#19-phase-3--supabase-backend-migration).
+
+```text
+        TÌM PHÒNG / Browse Rooms                  ⟳ live
+ ┌──────────────────────────────────────────────────────┐
+ │ BAC-8249  "Bàn của Alex"   Cào cái   3/8   ● đang chờ │ [Vào]
+ │ BAC-1027  "Hội cuối tuần"  Cào rùa   6/8   ● đang chờ │ [Vào]
+ │ BAC-4413  "Test"           Cào cái   2/16  ● đang chờ │ [Vào]
+ └──────────────────────────────────────────────────────┘
+   (chỉ hiện phòng công khai đang ở sảnh / public rooms in lobby only)
+   [ Nhập mã / Join by code ]      [ Tạo phòng / Create ]
+```
+
+- Shows only **public** rooms still in the **lobby** (a room drops off the list the moment a round starts, it fills up, is set private, or closes — no stale entries).
+- One click joins by code; the usual guards still apply (not full, still in lobby).
+- **Public by default**, with a host toggle on Create/Lobby: **"Cho phép tìm phòng / List publicly"** ↔ **"Riêng tư / Private"** (private = code-only, hidden from the browser).
+- Reinforces the **virtual-chips / play-money** framing (per §2 compliance) — the list must not imply real-money tables.
+
 ---
 
 ## 10. Audio / Visual / Feel
@@ -266,6 +288,7 @@ Accessibility: color-blind-safe outcome indicators (icons + text + suit symbols,
 | **Ba tiên dealt** | Auto-win highlighted; beats even a cào (9). |
 | Nobody bets | Round can be skipped or dealt with no payouts (per config). |
 | Network can't connect | Clear "couldn't connect (network restrictions)" message, not a frozen screen. |
+| Join a browser-listed room that just filled/started (Phase 3) | The list self-updates, but on a race the join is rejected with "Phòng đã đầy / đã bắt đầu" and the entry disappears. |
 
 ---
 
@@ -293,6 +316,8 @@ Accessibility: color-blind-safe outcome indicators (icons + text + suit symbols,
 | Spectator, reactions, replay | | ✅ | |
 | Host migration | | ✅ | |
 | Bonus multipliers (ba tiên / cào) | | ✅ | |
+| Server-authoritative backend (Supabase: server RNG, Realtime, Auth) | | | ✅ |
+| Active room discovery (public room browser, public-by-default) | | | ✅ |
 | Accounts, leaderboard, tournaments | | | ✅ |
 
 ---

@@ -1,0 +1,38 @@
+# Supabase local dev config (Phase 3). Run `supabase start` to boot a local
+# stack, `supabase db reset` to apply migrations, `supabase functions serve` to
+# run the Edge Functions. See supabase/README.md.
+project_id = "beikao"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+# Match the linked hosted project (Postgres 17). Also sets the local dev DB version.
+major_version = 17
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+# Anonymous play in MVP; email/OAuth upgrade is Phase 3d.
+enable_anonymous_sign_ins = true
+
+# The authority lives in this function; it needs the service-role key (injected
+# automatically for deployed functions) and runs without a verified JWT so
+# anonymous players can call it.
+[functions.intent]
+verify_jwt = false
+
+# Cron-driven betting-deadline closer (see supabase/README.md for scheduling).
+[functions.tick]
+verify_jwt = false

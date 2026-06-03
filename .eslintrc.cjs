@@ -9,7 +9,9 @@ module.exports = {
   parser: '@typescript-eslint/parser',
   parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
   plugins: ['@typescript-eslint', 'react-hooks', 'react-refresh'],
-  ignorePatterns: ['dist', 'node_modules', '*.config.js', '*.config.ts'],
+  // `supabase/` holds Deno Edge Functions (npm:/jsr: imports, Deno globals) —
+  // linted/typechecked by the Supabase CLi (deno), not this app's ESLint/tsc.
+  ignorePatterns: ['dist', 'node_modules', '*.config.js', '*.config.ts', 'supabase', 'scripts'],
   rules: {
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     'react-hooks/rules-of-hooks': 'error',

@@ -7,7 +7,7 @@ import {
   shuffle,
   type CaoCaiCon,
 } from '@/features/cao';
-import { bytesToHex, combineSeeds, randomSeed, sha256Hex } from '@/utils/crypto';
+import { bytesToHex, combineSeeds, hexToBytes, randomSeed, sha256Hex } from '@/utils/crypto';
 import { genId } from '@/utils/id';
 import { REACTIONS, type Intention, type ServerMessage } from '@/network/protocol/messages';
 import {
@@ -33,12 +33,37 @@ export interface AuthorityCallbacks {
   sendTo: (playerId: string, msg: ServerMessage) => void;
 }
 
+/**
+ * The authority's private (never-broadcast) state. Kept out of RoomState because
+ * `pendingSeed` during BETTING would let a con compute the deck early. In P2P
+ * this lives in memory on the host; in the Phase-3 server it is persisted to a
+ * service-role-only table between stateless Edge Function invocations.
+ */
+export interface AuthoritySecrets {
+  pendingSeedHex: string | null;
+  pendingPlayerSeeds: Record<string, string>;
+  roundCounter: number;
+}
+
 export interface AuthorityOptions {
   roomId: string;
   hostId: string;
   hostName: string;
   config?: Partial<RoomConfig>;
   callbacks: AuthorityCallbacks;
+  /**
+   * Phase 3: hydrate from persisted state instead of building a fresh room.
+   * When given, `roomId`/`hostName`/`config` are ignored (already in the state).
+   */
+  snapshot?: RoomState;
+  /** Phase 3: the persisted private state to resume with (paired with `snapshot`). */
+  secrets?: AuthoritySecrets;
+  /**
+   * Phase 3: the stateless server runs one intention per invocation and lets a
+   * cron tick close betting at the deadline, so the in-process `setTimeout` is
+   * disabled. P2P (host in a live tab) keeps it on. Default: true.
+   */
+  useTimers?: boolean;
 }
 
 /**
@@ -62,9 +87,22 @@ export class GameAuthority {
   private pendingSeed: Uint8Array | null = null;
   private pendingPlayerSeeds: Record<string, string> = {};
   private starting = false;
+  private readonly useTimers: boolean;
 
   constructor(opts: AuthorityOptions) {
     this.cb = opts.callbacks;
+    this.useTimers = opts.useTimers ?? true;
+
+    // Phase 3: resume a persisted room instead of creating a fresh one.
+    if (opts.snapshot) {
+      this.state = opts.snapshot;
+      const s = opts.secrets;
+      this.roundCounter = s?.roundCounter ?? this.deriveRoundCounter(opts.snapshot);
+      this.pendingSeed = s?.pendingSeedHex ? hexToBytes(s.pendingSeedHex) : null;
+      this.pendingPlayerSeeds = s?.pendingPlayerSeeds ? { ...s.pendingPlayerSeeds } : {};
+      return;
+    }
+
     const config: RoomConfig = { ...DEFAULT_CONFIG, ...opts.config };
     this.state = {
       id: opts.roomId,
@@ -95,8 +133,50 @@ export class GameAuthority {
     return this.state;
   }
 
+  /** Phase 3: the private state to persist alongside the snapshot. */
+  getSecrets(): AuthoritySecrets {
+    return {
+      pendingSeedHex: this.pendingSeed ? bytesToHex(this.pendingSeed) : null,
+      pendingPlayerSeeds: { ...this.pendingPlayerSeeds },
+      roundCounter: this.roundCounter,
+    };
+  }
+
+  /**
+   * Phase 3 (3d): override a seat's chip balance from the player's durable
+   * profile (called by the server right after a JOIN/create so chips follow the
+   * player between rooms). No-op in P2P.
+   */
+  setBalance(playerId: string, balance: number): void {
+    const p = this.findPlayer(playerId);
+    if (p) {
+      p.balance = balance;
+      this.commit();
+    }
+  }
+
+  /** Fallback when resuming without persisted secrets (e.g. legacy rows). */
+  private deriveRoundCounter(state: RoomState): number {
+    const fromHistory = state.history[0]?.roundNumber ?? 0;
+    return Math.max(state.round?.roundNumber ?? 0, fromHistory);
+  }
+
   dispose(): void {
     this.clearTimer();
+  }
+
+  /**
+   * Phase 3 cron entry: close betting if the deadline has passed. P2P uses the
+   * internal `setTimeout` instead; the server calls this from a ~1s tick.
+   * Returns true if it acted (so the caller knows to persist).
+   */
+  tickDeadline(now: number): boolean {
+    const { status, round } = this.state;
+    if (status === 'BETTING' && round?.endsAt != null && now >= round.endsAt) {
+      this.closeBetting();
+      return true;
+    }
+    return false;
   }
 
   // ── connection lifecycle ──────────────────────────────────────────────
@@ -156,9 +236,35 @@ export class GameAuthority {
     }
   }
 
+  /**
+   * Phase 3 (presence): reconcile every seat's `connected` flag against the set
+   * of player ids currently present on the Realtime channel, and drop spectators
+   * who left. Many-at-once equivalent of join/disconnect, driven by Realtime
+   * Presence so genuine drops (crash/sleep/network) are detected, not just clean
+   * tab closes. The cái keeps its `ready` flag (same exemption as disconnect()).
+   */
+  reconcilePresence(presentIds: readonly string[]): void {
+    const present = new Set(presentIds);
+    for (const p of this.state.players) {
+      const online = present.has(p.id);
+      if (p.connected !== online) {
+        p.connected = online;
+        if (!online && p.id !== this.state.caiId) p.ready = false;
+      }
+    }
+    this.state.spectators = this.state.spectators.filter((s) => present.has(s.id));
+    this.commit();
+  }
+
   // ── intention handling ────────────────────────────────────────────────
 
-  submit(playerId: string, msg: Intention): void {
+  /**
+   * Apply one intention. Async because START_ROUND/NEXT_ROUND await the deck
+   * commitment (SHA-256). P2P callers fire-and-forget (the host tab stays alive
+   * and `commit()` broadcasts when it resolves); the stateless Phase-3 server
+   * awaits it so it persists the post-`beginRound` state, not the state before.
+   */
+  async submit(playerId: string, msg: Intention): Promise<void> {
     const p = this.findPlayer(playerId);
     switch (msg.type) {
       case 'JOIN':
@@ -206,13 +312,13 @@ export class GameAuthority {
         if (p.isCai && this.state.status === 'LOBBY') this.applyConfig(msg.config);
         return;
       case 'START_ROUND':
-        if (p.isCai && this.state.status === 'LOBBY') void this.beginRound(playerId);
+        if (p.isCai && this.state.status === 'LOBBY') await this.beginRound(playerId);
         return;
       case 'CLOSE_BETTING':
         if (p.isCai && this.state.status === 'BETTING') this.closeBetting();
         return;
       case 'NEXT_ROUND':
-        if (p.isCai && this.state.status === 'REVEAL') void this.beginRound(playerId);
+        if (p.isCai && this.state.status === 'REVEAL') await this.beginRound(playerId);
         return;
       case 'BACK_TO_LOBBY':
         if (p.isCai && this.state.status !== 'LOBBY') this.toLobby();
@@ -273,7 +379,11 @@ export class GameAuthority {
       };
       this.state.status = 'BETTING';
       this.clearTimer();
-      this.timer = setTimeout(() => this.closeBetting(), config.bettingSeconds * 1000);
+      // P2P: the host tab owns the betting clock. Server (Phase 3): a cron tick
+      // closes betting at `round.endsAt`, so no in-process timer is scheduled.
+      if (this.useTimers) {
+        this.timer = setTimeout(() => this.closeBetting(), config.bettingSeconds * 1000);
+      }
       this.commit();
     } finally {
       this.starting = false;

@@ -1,17 +1,18 @@
-# Bài Cào — Multiplayer (P2P)
+# Bài Cào — Multiplayer
 
-A browser-based multiplayer [Bài cào](https://vi.wikipedia.org/wiki/Bài_cào) (Vietnamese 3-card game). Static SPA, host-authoritative peer-to-peer over WebRTC (PeerJS), deployable to GitHub Pages with no dedicated game backend.
+A browser-based multiplayer [Bài cào](https://vi.wikipedia.org/wiki/Bài_cào) (Vietnamese 3-card game). Static React SPA deployable to GitHub Pages, backed by **Supabase** (server-authoritative) — Postgres state, Realtime transport, and Edge Functions that run the game authority. The room creator is the **cái (dealer)** — a real player everyone bets against.
 
-The room creator is the **cái (dealer)** — a real player everyone bets against, *and* the game authority. See [GDD.md](./GDD.md) (game design), [TDD.md](./TDD.md) (technical design), and [CLAUDE.md](./CLAUDE.md) (contributor orientation).
+> **History:** the app began as host-authoritative peer-to-peer over WebRTC (PeerJS). That layer has been **removed** in favour of the Supabase backend (TDD §19); the docs' P2P sections are retained as design history. See [GDD.md](./GDD.md) (game design), [TDD.md](./TDD.md) (technical design), and [CLAUDE.md](./CLAUDE.md) (contributor orientation).
 
 ## Quick start
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173/beikao/
+cp .env.example .env.local   # then fill in your Supabase URL + anon key
+npm run dev                  # http://localhost:5173/beikao/
 ```
 
-Open the URL, create a room, then share the room code (or the `?room=BAC-XXXX` link) with another browser/device to join.
+Supabase is **required** — without `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` the app can't create or join rooms. See [`supabase/README.md`](./supabase/README.md) to stand up the backend (`supabase start`, migrations, Edge Functions). Then create a room and share the code (or the `?room=BAC-XXXX` link) to join.
 
 ## Scripts
 
@@ -28,15 +29,16 @@ Open the URL, create a room, then share the room code (or the `?room=BAC-XXXX` l
 
 Run a single test file: `npx vitest run src/features/cao/hand.test.ts`
 
-## Networking note
+## Backend
 
-PeerJS uses the public broker for signaling. For reliable connectivity on mobile / restrictive networks you need a **TURN server** — configure it via `.env.local` (see [.env.example](./.env.example)) or GitHub Actions secrets. Without TURN, some peers will fail to connect.
+All multiplayer goes through **Supabase** (no WebRTC/TURN, no signaling broker): clients read room state over **Realtime** and send intentions to **Edge Functions** that run the authority. Set up the backend per [`supabase/README.md`](./supabase/README.md) and configure `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (via `.env.local` locally, or GitHub Actions secrets for deploy).
 
 ## Status
 
-- ✅ Game engine (scoring, ba tiên, suit tie-break, settlement) — fully unit-tested
-- ✅ Host-authoritative networking (PeerJS), Zustand store, Cào cái + Cào rùa
-- ✅ UI: Home / Lobby / Game, betting timer, reveal, chat, history
-- ⏳ Provably-fair commit–reveal, host migration, spectator, replay (see TDD phasing)
+- ✅ Game engine (scoring, ba tiên, suit tie-break, settlement) — fully unit-tested; reused **verbatim** server-side in the Edge Functions
+- ✅ **Supabase backend (Phase 3, 3a–3e):** server-authoritative engine in Edge Functions, Postgres state + Realtime transport, server RNG, provably-fair commit–reveal, presence-based disconnect, anonymous Auth, durable cross-room balances, leaderboard, live room-discovery browser
+- ✅ UI: Home (create / join / browse / leaderboard) / Lobby / Game, betting timer, reveal, chat, reactions, history, spectator
+- 🗑️ The legacy host-authoritative **P2P/WebRTC (PeerJS) layer has been removed** (TDD §19)
+- ⏳ Persistent round history in Postgres, tournaments, JWT-derived server-side identity (see TDD phasing)
 
 Virtual chips only — play money, not real-money gambling.

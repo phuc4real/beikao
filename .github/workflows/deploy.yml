@@ -30,10 +30,10 @@ jobs:
       - run: npm run test
       - run: npm run build
         env:
-          # Optional: provide a TURN server for production connectivity.
-          VITE_TURN_URL: ${{ secrets.VITE_TURN_URL }}
-          VITE_TURN_USERNAME: ${{ secrets.VITE_TURN_USERNAME }}
-          VITE_TURN_CREDENTIAL: ${{ secrets.VITE_TURN_CREDENTIAL }}
+          # Supabase is the backend. These MUST be set (Actions secrets) for the
+          # deployed app to function — without them the SPA can't create/join rooms.
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - uses: actions/upload-pages-artifact@v3
         if: github.ref == 'refs/heads/main'
         with:

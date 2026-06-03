@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-The MVP **plus Phase 2** is implemented and green — Vite + React + TS SPA with a fully-tested game engine, host-authoritative PeerJS networking, and the Home/Lobby/Game UI. `npm run build`, `npm run lint`, and `npm run test` (43 tests) all pass; CI (`.github/workflows/deploy.yml`, Node 22) runs typecheck + lint + test + build, then deploys to Pages.
+The MVP **plus Phase 2** is implemented and green — Vite + React + TS SPA with a fully-tested game engine, host-authoritative PeerJS networking, and the Home/Lobby/Game UI. `npm run build`, `npm run lint`, and `npm run test` (43 tests) all pass; CI (`.github/workflows/deploy.yml`, Node 22) runs typecheck + lint + test + build, then deploys to Pages. **Phase 3 (Supabase backend) steps 3a–3e are built** — when the Supabase env is configured, Supabase is now the **default** backend (P2P is the fallback). See the Phase 3 section below and `supabase/README.md`.
 
 Design specs (keep consistent with each other and with the code):
 - **`project_idea.md`** — pitch / overview / game primer.
@@ -26,15 +26,16 @@ npx vitest run src/features/cao/hand.test.ts   # a single test file
 ## Code map
 
 - **`src/features/cao/`** — the pure, deterministic, I/O-free **game engine** (cards, deck/shuffle, hand evaluation, `compareHands`, settlement). Start here; it's the most-tested and highest-risk code. Has co-located `*.test.ts`.
-- **`src/features/room/`** — `authority.ts` (the host's `GameAuthority`: state machine + intention validation, the only place that mutates authoritative state) and `types.ts` (`RoomState` and friends).
-- **`src/network/protocol/messages.ts`** — Zod schemas for client→host intentions + typed host→client messages. All inbound messages are validated here.
-- **`src/app/session/`** — `hostSession.ts` / `clientSession.ts` wrap PeerJS. The host wires the authority to connections and to its own UI via **loopback**.
-- **`src/app/store/store.ts`** — Zustand store; the bridge between React and the active session. UI never touches sessions directly.
+- **`src/features/room/`** — `authority.ts` (`GameAuthority`: state machine + intention validation, the only place that mutates authoritative state — runs **server-side** in the `intent` Edge Function, hydrated per request) and `types.ts` (`RoomState` and friends).
+- **`src/network/protocol/messages.ts`** — Zod schemas for client→server intentions + typed server→client messages. The same `intentionSchema` validates inbound messages in the Edge Function.
+- **`src/app/session/`** — `types.ts` (the `Session` interface) and `supabaseSession.ts` (the only implementation: Realtime in, `intent` Edge Function RPC out). The legacy PeerJS host/client sessions were removed.
+- **`src/network/supabase/`** — `client.ts` (the Supabase client), `auth.ts` (anonymous-auth identity), `rooms.ts` (discovery), `leaderboard.ts`.
+- **`src/app/store/store.ts`** — Zustand store; the bridge between React and the active session. UI never touches the session directly.
 - **`src/components/`, `src/pages/`** — UI. `RoomPage` renders `Lobby` or `GameTable` off `room.status`.
 
 ## What the project is
 
-A multiplayer **Bài cào** game (Vietnamese 3-card gambling card game) — **not Baccarat** (an earlier discarded direction). It is a static React SPA deployed to GitHub Pages, using **host-authoritative peer-to-peer** networking over WebRTC (PeerJS). One player's browser is the authority; there is no dedicated game backend (though a signaling broker and a TURN relay are still required external services).
+A multiplayer **Bài cào** game (Vietnamese 3-card gambling card game) — **not Baccarat** (an earlier discarded direction). It is a static React SPA deployed to GitHub Pages, backed by **Supabase** (server-authoritative): clients read room state over **Realtime** and send intentions to **Edge Functions** that run the `GameAuthority`. The room creator is the **cái (dealer)** — a real participant, no longer the authority. (It originally used host-authoritative P2P over WebRTC/PeerJS; that layer was removed — see Phase 3 below.)
 
 ## Domain rules that are easy to get wrong
 
@@ -48,22 +49,22 @@ These are the highest-risk logic and the source of most subtle bugs. Implement e
 
 ## Architecture invariants
 
-The hardest part of this project is not the card logic — it's keeping the host honest while the host also plays. Preserve these:
+The authority runs on the **server** (the `intent` Edge Function, hydrating `GameAuthority` per request). Preserve these:
 
-- **The host IS the cái (dealer)** — a real participant who is dealt a hand everyone bets against, *and* the game authority. These are two roles in one process and must stay separate in code.
-- **Authority/engine code must never branch on `isHost` / `isCai`.** The cái's hand is dealt from the same shuffled deck in the same seat order as everyone else; the host's bets/accounting go through the same validation/settlement path (via a loopback connection). The dealer must have no information or rules advantage beyond the structural house edge of being the cái.
-- **Clients send intentions, never results.** A client says "bet 100"; the host computes the outcome. Never trust a client-reported win/score/balance.
-- **Hidden hands are never sent to clients before the reveal step** — otherwise the cái (or a sniffing client) could see hands during betting.
-- **The host owns time.** The betting deadline (`endsAt`) is host-controlled; client timestamps are advisory only and never used for timing.
-- **Host = single point of failure.** MVP closes the room gracefully on host loss; host migration is a Phase-2 feature that voids+refunds any in-flight round.
+- **The cái (dealer) is a real participant, not the authority.** The server holds the deck/RNG, so the dealer has no information or rules advantage beyond the structural house edge of being the cái.
+- **Authority/engine code must never branch on `isHost` / `isCai`.** Every hand is dealt from the same shuffled deck in the same seat order; everyone's bets/accounting go through the same validation/settlement path.
+- **Clients send intentions, never results.** A client says "bet 100"; the server computes the outcome. Never trust a client-reported win/score/balance.
+- **Hidden hands are never sent to clients before the reveal step** — the authority keeps them out of `RoomState` until REVEAL, and the deck seed lives in `room_secrets` (never published, never anon-readable).
+- **The server owns time.** The betting deadline (`endsAt`) is server-controlled and closed by the `tick` cron; client timestamps are advisory only.
+- **No single point of failure.** State is durable in Postgres, so any client (incl. the cái) can drop and rejoin freely.
 
-## Networking reality (do not skip)
+## Backend reality (do not skip)
 
-"No backend" does not mean "no servers." WebRTC requires a **signaling broker** (PeerJS cloud or self-hosted `peerjs-server`) and, for symmetric-NAT/mobile networks, a **TURN relay** (self-hosted coturn or a paid provider) — this is the one real cost item. Game messages use an **ordered + reliable** DataChannel; per-peer sequence numbers provide idempotency. Topology is a **star**: every con connects only to the host, which broadcasts one shared snapshot/delta to all peers.
+All multiplayer is **Supabase** — no WebRTC/TURN, no signaling broker. Clients read room state via **Realtime** (Postgres changes on the room's row) and send intentions to **Edge Functions** (`intent`, `tick`) running with the service-role key. The Edge Functions reuse the app's engine + authority **verbatim** via `npm run build:functions` (esbuild → `supabase/functions/_shared/engine.bundle.js`). The app **requires** `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` to function. Full setup/deploy in `supabase/README.md`.
 
 ## Toolchain & conventions
 
-Stack in use: **React 18 + Vite + TypeScript (strict, incl. `noUncheckedIndexedAccess`)**, Tailwind, **Zustand**, **PeerJS**, **Zod** (validates all inbound messages), **Web Crypto** (`getRandomValues` for the shuffle seed — never `Math.random`). Tests: **Vitest** with co-located `*.test.ts`. The `@/` alias maps to `src/`. GitHub Pages: Vite `base` is `/beikao/` (override with `BASE_PATH`) and routing is **hash-mode**, so refreshes/deep-links work without a `404.html`.
+Stack in use: **React 18 + Vite + TypeScript (strict, incl. `noUncheckedIndexedAccess`)**, Tailwind, **Zustand**, **`@supabase/supabase-js`** (Realtime + Auth + Edge Function RPC), **Zod** (validates all inbound messages, client- and server-side), **Web Crypto** (`getRandomValues` for the shuffle seed — never `Math.random`). Tests: **Vitest** with co-located `*.test.ts`. The `@/` alias maps to `src/`. GitHub Pages: Vite `base` is `/beikao/` (override with `BASE_PATH`) and routing is **hash-mode**, so refreshes/deep-links work without a `404.html`.
 
 When extending gameplay, change the engine + its tests first, then the authority, then the protocol/UI — and keep the GDD/TDD in sync.
 
@@ -82,3 +83,32 @@ When extending gameplay, change the engine + its tests first, then the authority
 ## Not yet built (per TDD phasing)
 
 Host migration, rotating cái, and full vi/en i18n (UI is Vietnamese). Session persistence uses localStorage (only round history uses IndexedDB). Cào rùa settlement works but its betting UI is minimal (Cào cái is the fully-driven mode).
+
+## Phase 3 (3a–3e built): Supabase backend migration
+
+See **`TDD.md §19`** and **`supabase/README.md`**. Moving from host-authoritative P2P to a **server-authoritative Supabase backend** as a *migration, not a rewrite*.
+
+**Already implemented (behind a flag — P2P is still the default; nothing changes unless `VITE_BACKEND=supabase`):**
+- `GameAuthority` is now **hydratable**: `new GameAuthority({ snapshot, secrets, useTimers:false })` resumes a persisted room and runs statelessly (no `setTimeout`); `getSecrets()` exposes the private deal state; `tickDeadline(now)` closes betting from a cron. The fresh-construction path is unchanged (all 43 tests still green).
+- `supabase/` — SQL migration (`rooms` + `room_secrets` + `room_directory` view, RLS, realtime publication), `config.toml`, and Edge Functions `intent` (the authority — hydrate→submit→persist) + `tick` (deadline closer). The functions **reuse `src/` verbatim** via a Deno import map (`functions/deno.json`); they are linted/typechecked by the Supabase CLI, NOT this app's eslint/tsc (`supabase/` is in `.eslintrc` ignore + outside `tsconfig` include).
+- Client seam: `src/network/supabase/{client,backend}.ts`, `src/app/session/supabaseSession.ts` (third `Session` impl — Realtime in, `intent` RPC out), store wired to pick the backend. Persisted state means a **host can now rejoin after reload** under Supabase.
+- Engine bundling: Edge Functions reuse `src/` verbatim via `npm run build:functions` (esbuild → `supabase/functions/_shared/engine.bundle.js`); they import `npm:@supabase/supabase-js@2`. Re-run `build:functions` after any engine/authority/protocol change.
+- **Active room discovery (3d):** `src/network/supabase/rooms.ts` (queries the `room_directory` view + Realtime subscribe), `src/components/RoomBrowser.tsx`, and a "Tìm phòng" tab on `HomePage` shown only in Supabase mode. `createRoom(name, config, isPublic)` carries the public/private toggle.
+- **Room lifecycle (cleanup):** the directory only lists rooms with `player_count > 0`. In-app leave is *permanent* (deletes the room if last out); tab-close sends a `keepalive` non-permanent leave (marks disconnected → room empties/hides, but survives for reload-reconnect). `tick` reaps rooms whose `empty_since` is older than ~30 s, and sweeps dead rooms (stale `updated_at`). See `migrations/0002_room_cleanup.sql`.
+- **Presence (3c):** clients track Realtime Presence (key = playerId); the lowest-present-id "reporter" pushes the present set to the `sync_presence` op, which calls `GameAuthority.reconcilePresence(present)` to set every seat's `connected`. The reporter also heartbeats (~25 s) so a stale `updated_at` reliably means a dead room. The `pagehide` keepalive leave remains the instant clean-close path.
+- **Stats + leaderboard (3d):** `migrations/0003_profiles_leaderboard.sql` (`profiles` + `leaderboard` view + service-role-only `record_round_result` RPC). The server records each settled round's per-player net+balance via `_shared/stats.ts` (called from `intent` CLOSE_BETTING and `tick` deadline-close). Client: `src/network/supabase/leaderboard.ts` + `src/components/Leaderboard.tsx`, shown on `HomePage`.
+- **Auth identity (3d):** `src/network/supabase/auth.ts` — in Supabase mode the player id is an **anonymous Supabase Auth uid** (persisted session → stable across reloads, upgradeable to email/OAuth later); `ensureIdentity()` is awaited in `store.createRoom/joinRoom`. P2P still uses the localStorage id. Requires "Anonymous sign-ins" enabled in the Supabase dashboard.
+- **Durable balances (3d):** `migrations/0004_durable_balances.sql` adds `profiles.balance` + `get_or_create_profile` RPC. On create/JOIN the server seeds the seat's balance from the profile (`GameAuthority.setBalance`); on settle, `record_round_result` writes the post-settle balance back — so chips follow the player across rooms (new players are granted the room's `startingBalance`).
+- **Backend default (3e):** `ACTIVE_BACKEND` is `supabase` whenever Supabase is configured (P2P only when unconfigured or `VITE_BACKEND=p2p`). PeerJS/TURN are **kept as a fallback**, not deleted. CI passes `VITE_SUPABASE_URL/ANON_KEY` (empty ⇒ P2P, so non-breaking).
+
+**Design choice vs TDD §19.4:** authoritative state is one `rooms.state` jsonb blob (not normalized tables) — that's what makes the verbatim authority reuse possible. Secrets are isolated in `room_secrets` (never published, never anon-readable). Normalized tables for leaderboards come in 3d.
+
+**Not yet verified:** the Edge Functions need a live `supabase start` to shake out Deno import resolution (sloppy-imports), RLS, and the realtime payload shape — see `supabase/README.md` "Not yet done".
+
+The intent is to leverage two existing seams:
+- **The engine (`features/cao/`) is pure/I-O-free**, so it runs unchanged inside a Deno **Edge Function** (server-side authority + server RNG).
+- **`Session` is an interface** (`hostSession.ts`/`clientSession.ts` implement it; the store only talks to `Session`). Phase 3 adds a third impl, **`SupabaseSession`** (Realtime for state in, Edge Function RPC for intentions out), leaving the store, UI, `RoomState`, and Zod schemas untouched.
+
+Mapping: authority → Edge Functions; transport → Supabase **Realtime** (replaces WebRTC, drops the signaling broker + TURN); state → Postgres tables; RNG → server-side (eliminates the host-cheat class, so commit–reveal becomes optional); identity → Supabase **Auth** (anonymous-first). **Hidden hands** stay safe via a `round_hands` table excluded from the Realtime publication + RLS (own-row always, others only where `revealed`) — the "no hidden hands before REVEAL" invariant becomes DB-enforced. The server owns the betting clock (pg_cron / scheduled function). When extending toward Phase 3, preserve the same invariants and don't fork the engine — share it.
+
+**Active room discovery** (a Phase-3 deliverable, TDD §19.9): once rooms are Postgres rows, the Home page can show a **live public room browser** (Realtime-subscribed to `rooms WHERE status='LOBBY' AND is_public`) for one-click join — something pure P2P can't do (no client can enumerate rooms in other browsers). Rooms are **public by default** with a host private/public toggle; `rooms.is_public` + a denormalized `player_count` drive the list; an anon RLS policy exposes only directory columns (never config/seeds/hands). No heartbeat needed — row state evicts stale entries.

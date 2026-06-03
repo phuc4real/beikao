@@ -9,6 +9,8 @@
 
 ## 1. Summary
 
+> **As-built (Phase 3 complete):** the implemented backend is **Supabase** (server-authoritative — see §19). The host-authoritative **P2P/WebRTC (PeerJS) transport described in §2–§16 has been removed**; those sections are retained as design history and as the rationale for the migration. The pure game engine, `RoomState`, and the `GameAuthority` state machine described below are unchanged — they now run inside Edge Functions instead of the host's browser.
+
 A static React SPA, deployed on GitHub Pages, implementing a **host-authoritative** peer-to-peer **Bài cào** game over WebRTC (PeerJS). One player's browser is both the **authority** (owns deck, RNG, validation, payouts, state) and a **participant** — specifically the **cái (dealer)**, a real player everyone else bets against. Clients are render-only mirrors that send *intentions* and receive authoritative *snapshots*.
 
 **Key constraints**
@@ -296,7 +298,7 @@ Goal: the cái cannot alter the deck (or its own hand) after seeing bets, and **
 - Deck committed *before* bets so the cái can't reshuffle after seeing the table; player-seed mixing means even a malicious cái can't precompute a favorable deal.
 
 ### 7.3 Server-side trust (Phase 3)
-Moving RNG to a real backend (SignalR + server RNG) eliminates the host-cheating class entirely.
+Moving the deck + RNG to a real backend (**Supabase** — server-side RNG inside an Edge Function) eliminates the host-cheating class **entirely**: no human ever holds the seed or sees a hidden hand, so the elaborate commit–reveal plumbing becomes optional (kept only as a public verifiability nicety). See [§19 — Phase 3: Supabase Backend Migration](#19-phase-3--supabase-backend-migration).
 
 ---
 
@@ -517,7 +519,7 @@ on push to main:
 | --- | --- |
 | **MVP** | CaoEngine (scoring + ba tiên + suit tie-break) + tests, Cào cái & Cào rùa settlement, PeerJS star transport + TURN, host-authoritative state machine, host-as-cái with strict separation, betting/timer/limits, chat, history, reconnection, graceful host-leave, vi/en UI, Pages deploy. |
 | **Phase 2** | Provably-fair commit–reveal + verify UI, Cào thách (private challenges), rotating cái, bonus multipliers, spectator, reactions, replay, host migration. |
-| **Phase 3** | ASP.NET Core + SignalR backend, PostgreSQL/Redis, accounts, leaderboard, tournaments, server RNG. |
+| **Phase 3** (3a–3e built) | **Supabase backend migration** (§19): server-authoritative engine in Edge Functions, Postgres state, Realtime transport, server RNG, anonymous Auth, durable cross-room balances, leaderboard, active room discovery. Supabase is the default backend; the host-as-authority + TURN model is kept only as a fallback. *(Tournaments + persistent round history remain.)* |
 
 ---
 
@@ -529,3 +531,159 @@ on push to main:
 4. **TURN provider** — self-hosted coturn vs. paid. The one real cost item.
 5. **Router mode** — hash vs. `404.html` fallback on Pages.
 6. **Table cap** — keep 8, or raise toward the 17-player rule limit (bandwidth/UI trade-off).
+7. **Phase 3 hosting of the SPA** — keep the static build on GitHub Pages (Supabase as the only backend), or move it to Supabase/Vercel/Netlify hosting to colocate with the API. (§19)
+
+---
+
+## 19. Phase 3 — Supabase Backend Migration
+
+> **Goal:** replace the host-authoritative WebRTC model with a **server-authoritative** backend on **Supabase**, so the authority lives on a server instead of a player's browser. This removes the structural weaknesses of the P2P design (single point of failure, host-can-cheat class, TURN cost/connectivity, lossy host migration) and unlocks persistent accounts, durable balances, and leaderboards — *without rewriting the game rules*.
+
+### 19.1 Why migrate
+
+| P2P limitation (MVP/Phase 2) | Resolved by Supabase |
+| --- | --- |
+| Host = single point of failure; migration is complex and voids in-flight rounds (§10). | Authority is a stateless Edge Function over durable Postgres; any client can drop/rejoin freely. |
+| Host **is** the cái → needs commit–reveal plumbing to be trustworthy (§7). | Server holds the deck + RNG; **no human ever sees a hidden hand or the seed**. Whole host-cheat class gone. |
+| TURN relay is the one real cost item and still fails on some networks (§4.1). | No WebRTC, no STUN/TURN, no signaling broker. Plain WebSocket to Supabase Realtime. |
+| No identity, no cross-session persistence, balances reset on room close. | Supabase Auth + Postgres → persistent accounts, durable balances, history, leaderboards. |
+| Star topology caps practically at the host's uplink. | Realtime fan-out is handled by Supabase infra, not a peer. |
+| **No way to discover rooms** — you must already know the code; no client can enumerate rooms that live in other browsers. | Rooms are rows → a live, self-updating **public room browser** for one-click join (§19.9). |
+
+### 19.2 The key architectural seam — reuse, don't rewrite
+
+Two existing abstractions make this a **migration, not a rebuild**:
+
+1. **The engine (`features/cao/`) is pure, deterministic, I/O-free TypeScript.** It runs unchanged inside a Deno Edge Function — the most-tested, highest-risk code (scoring, ba tiên, suit tie-break, settlement) is reused verbatim, server-side. Extract it to a shared module importable by both the SPA and the functions.
+2. **`Session` is already an interface** (`hostSession.ts` / `clientSession.ts` both implement it; the store talks only to `Session`). Phase 3 adds a **third implementation, `SupabaseSession`**, that satisfies the same `send(intention)` / `onState` / `onServerMessage` contract. **The Zustand store, React UI, and `RoomState` shape stay as-is** — they don't know whether state arrives over a DataChannel or a Realtime channel.
+
+```text
+            store.ts  ──talks to──►  Session (interface)
+                                       ├── HostSession    (P2P, WebRTC)      ← Phase ≤2
+                                       ├── ClientSession  (P2P, WebRTC)      ← Phase ≤2
+                                       └── SupabaseSession (Realtime + RPC)  ← Phase 3  (new)
+```
+
+`GameAuthority`'s state machine + intention validation logic ports into the Edge Functions; the engine it calls is the same engine.
+
+### 19.3 Component mapping
+
+| Concern | Now (P2P) | Phase 3 (Supabase) |
+| --- | --- | --- |
+| Authority | Host browser `GameAuthority` | Edge Functions (Deno) — the only writer, via `service_role` |
+| Transport (host→client) | WebRTC DataChannel broadcast | **Realtime**: Postgres Changes on public columns (+ Broadcast for ephemeral events like reactions/typing) |
+| Transport (client→host) | DataChannel intention messages | **Edge Function RPC** (one function per intention) over HTTPS |
+| Game engine | `features/cao/` in the host tab | **same** `features/cao/` module, imported by the Edge Function |
+| RNG | Host `getRandomValues` + commit–reveal | Server `crypto.getRandomValues` inside the function; seed never leaves the server |
+| Authoritative state | In-memory `RoomState` on host | `rooms` / `players` / `rounds` / `round_hands` / `bets` Postgres tables |
+| Hidden hands | Withheld from broadcast until REVEAL | Stored in a table **excluded from the Realtime publication** + RLS; surfaced only at REVEAL (§19.6) |
+| Identity | `localStorage` playerId | **Supabase Auth** (anonymous sign-in first; optional email/OAuth upgrade) |
+| Persistence | IndexedDB (history only) | Postgres (durable, cross-session, queryable) |
+| The clock | Host owns `endsAt` | Server owns `ends_at`; **pg_cron / Scheduled Edge Function** closes betting + deals |
+| Validation | Zod in the host | Same Zod schemas in the function **+ Postgres RLS** as a second wall |
+
+### 19.4 Schema (sketch)
+
+> **As-built note (step 3a):** the implementation persists the authoritative `RoomState` as a **single `rooms.state` jsonb blob** with denormalized directory columns (`name`, `is_public`, `player_count`, `status`, `mode`, `ends_at`), plus a `room_secrets` table (never published, never anon-readable) for the deal seeds, and a `room_directory` view for discovery. This jsonb-hybrid (vs. the fully-normalized sketch below) is what lets the Edge Function **reuse `GameAuthority` verbatim** — its `broadcast` writes `state`, and hidden hands are already kept out of `RoomState` until REVEAL. The normalized per-entity tables below remain the target for leaderboard/analytics queries in step 3d. See `supabase/migrations/0001_phase3_init.sql`.
+
+```sql
+-- One row per room. config is the existing RoomConfig as jsonb.
+rooms (
+  id uuid pk, code text unique, name text, status room_status, mode game_mode,
+  config jsonb, cai_id uuid, host_user_id uuid,
+  is_public bool default true,         -- listed in the room browser; host can opt out (§19.9)
+  player_count int default 0,          -- denormalized for the discovery list (maintained by join/leave)
+  deck_commitment text, ends_at timestamptz, created_at timestamptz
+)
+
+players (
+  id uuid pk, room_id uuid fk, user_id uuid fk (auth.users),
+  name text, balance bigint,           -- integer chips, never float
+  seat int, ready bool, is_cai bool, is_spectator bool,
+  connected bool, last_seen timestamptz,
+  unique (room_id, seat)
+)
+
+rounds (
+  id uuid pk, room_id uuid fk, n int, status round_status,
+  final_seed text, host_seed text,     -- written only at REVEAL (public verifiability)
+  created_at timestamptz, revealed_at timestamptz
+)
+
+-- NOT in the realtime publication and RLS-guarded — see §19.6.
+round_hands (
+  round_id uuid fk, player_id uuid fk,
+  cards jsonb, score int, ba_tien bool, revealed bool default false,
+  pk (round_id, player_id)
+)
+
+bets ( round_id uuid fk, player_id uuid fk, amount bigint, settled_delta bigint,
+       pk (round_id, player_id) )
+
+chat ( id uuid pk, room_id uuid fk, player_id uuid, text text, created_at timestamptz )
+```
+
+### 19.5 Request flow (replaces §5 messaging during play)
+
+```text
+JOIN / BET / READY / START …            REVEAL / SETTLE …
+        client                                  server
+          │  invoke Edge Function ('place-bet')   │
+          │ ─────────────────────────────────────►│  validate (Zod + state + RLS),
+          │                                        │  run engine, write Postgres (txn)
+          │                                        │
+          │  ◄── Realtime: Postgres Change ────────┤  (public columns only)
+          ▼                                        ▼
+   store applies snapshot/delta            row update fans out to all room subscribers
+```
+
+- **Intentions → Edge Function RPC.** One function per intention (`join-room`, `set-ready`, `place-bet`, `clear-bet`, `start-round`, `next-round`, `update-config`, `send-chat`, `react`). Each validates with the existing Zod schemas, checks the state machine, mutates in a transaction, and returns `{ ok }` / a typed error. Clients still send **intentions, never results** — unchanged invariant.
+- **State → Realtime.** Clients subscribe to their room's changes on `players`, `rounds`, `bets`, `chat`. `SupabaseSession` maps incoming row changes into the existing `RoomState` shape and feeds the store via the same `onState` hook used today. Ephemeral, non-persisted events (reactions, typing) go over Realtime **Broadcast** instead of table writes.
+
+### 19.6 Hidden hands under RLS (the critical security detail)
+
+Postgres RLS is row-level, not column-level, so hidden cards need structural isolation, not just a policy on `rounds`:
+
+- `round_hands` is **excluded from the `supabase_realtime` publication** → dealing a round does **not** push anyone's cards to subscribers.
+- RLS on `round_hands`: a player may `SELECT` **their own** row at any time (to render their own hand), but **other players' rows only where `revealed = true`**.
+- At REVEAL, the deal/settle Edge Function flips `revealed = true` and writes the round's `host_seed`/`final_seed`; clients then read all hands (RLS now permits it) and may re-verify the deck with the existing `fairness.ts` logic. This preserves the **"hidden hands never reach clients before REVEAL"** invariant — now enforced by the database, not by a trusted host.
+
+### 19.7 The cái role, reconsidered
+
+With a server RNG the dealer no longer "controls the deck," so being the cái is now purely the **structural house-edge betting position**, not a trust liability. This makes previously-deferred features cheap: **rotating cái** is just updating `rooms.cai_id` each round; a **house cái** (no human dealer, server banks the table) becomes possible. The engine still never branches on who the cái is — settlement is seat-relative as today.
+
+### 19.8 Timing without a host clock
+
+The betting deadline moves fully server-side: `start-round` sets `rooms.ends_at`, and a **Scheduled Edge Function (pg_cron, ~1 s tick)** finds rooms whose `ends_at` has passed in `BETTING`, then runs close→deal→reveal→settle atomically. Client timestamps remain advisory only (unchanged invariant), and the "host owns time" rule becomes "the server owns time."
+
+### 19.9 Active room discovery (public lobby browser)
+
+Because rooms are now **rows**, "browse and join" becomes almost free — the feature pure P2P fundamentally couldn't offer (no client can enumerate rooms living inside other browsers; there is no shared directory). This is why room discovery is a Phase-3 deliverable, not a backport.
+
+- **Data:** `rooms.is_public` (default `true` — host can mark a room private → code-only) and a denormalized `rooms.player_count` (maintained by the `join-room`/leave functions, so the list query needs no per-row aggregation).
+- **The browser:** the Home page subscribes via **Realtime** to `rooms` filtered to `status = 'LOBBY' AND is_public = true`, rendering a **self-updating** list — room name, cái, mode, `player_count / maxPlayers` — that fills and empties live. One click joins by code; no manual entry.
+- **RLS:** an anon-readable policy exposes **only the directory columns** (code, name, mode, counts, status) of public LOBBY rooms — never `config` internals, `deck_commitment`/seeds, or any hand.
+- **Lifecycle:** a room leaves the list automatically when it exits LOBBY (round starts), fills up, is marked private, or closes. **No heartbeat/TTL needed** — Postgres row state is the source of truth, unlike a P2P registry, which would have to expire dead hosts.
+- **Visibility default: public by default.** The Create/Lobby UI offers a "Cho phép tìm phòng / List publicly" ↔ "Riêng tư / Private" toggle. Joining from the list still passes the same guards as code-join (room in LOBBY, not full).
+- **Abuse guards:** list reads are Realtime push (no poll to rate-limit); **joining** is rate-limited via the existing per-peer token bucket; room names are sanitized + length-capped; the browser reinforces the **virtual-chips / play-money** framing (no real-money implication) per the GDD compliance note.
+
+### 19.10 Migration phasing (within Phase 3)
+
+| Step | Deliverable | Notes |
+| --- | --- | --- |
+| **3a — Foundation** | Supabase project; extract `features/cao/` to a shared package importable by Deno; schema + RLS + publication config; CI deploys functions. | No UI change. Prove the engine runs identically in an Edge Function (port the Vitest suite to run against the Deno build). |
+| **3b — Server authority** | Edge Functions for every intention; port `GameAuthority`'s state machine + validation; scheduled deal/settle function; server RNG. | Authority logic moves off the browser. |
+| **3c — `SupabaseSession`** | New `Session` impl: Realtime subscribe → `RoomState`; RPC for `send`. Feature-flag to switch transport. | **Store + UI untouched.** Run P2P and Supabase paths side by side behind a flag. |
+| **3d — Accounts & discovery** ✅ | Anonymous Supabase Auth identity (persisted, upgradeable); durable cross-room balances; leaderboard (`profiles`/`leaderboard`); **active room discovery** — the public lobby browser (§19.9). *(Persistent round history + tournaments still open.)* | The features impossible under P2P. |
+| **3e — Default to Supabase** ✅ | `ACTIVE_BACKEND` defaults to `supabase` whenever configured; PeerJS/TURN kept as an opt-in fallback (`VITE_BACKEND=p2p`) rather than deleted, so the host-migration code (§10.2) is simply unused under Supabase. | TURN cost goes to zero on the default path. |
+
+### 19.11 Cost & infra trade-off
+
+P2P traded backend cost for client complexity + a mandatory TURN relay (the one real expense, §4.1). Phase 3 reverses that: a managed backend (Supabase free tier covers small-scale play; Postgres + Realtime + Edge Functions + Auth in one service) replaces the **signaling broker and the TURN relay entirely**. Net infra is simpler and the per-network connectivity failures disappear, at the cost of running a (managed) server instead of "pure static."
+
+### 19.12 What stays the same (do not rebuild)
+
+- The entire `features/cao/` engine and its tests (run server-side).
+- `RoomState` / `RoomConfig` shapes and the Zod intention schemas.
+- The Zustand store, all React components, and the `Session` interface contract.
+- Core invariants: clients send intentions not results; hidden hands withheld until REVEAL (now DB-enforced); integer chips only; server (was host) owns the clock; no authority code branches on who is the cái.

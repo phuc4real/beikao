@@ -41,17 +41,6 @@ export const intentionSchema = z.discriminatedUnion('type', [
 ]);
 export type Intention = z.infer<typeof intentionSchema>;
 
-export const intentionEnvelopeSchema = z.object({
-  v: z.literal(PROTOCOL_VERSION),
-  seq: z.number().int().nonnegative(),
-  payload: intentionSchema,
-});
-export type IntentionEnvelope = z.infer<typeof intentionEnvelopeSchema>;
-
-export function makeIntention(seq: number, payload: Intention): IntentionEnvelope {
-  return { v: PROTOCOL_VERSION, seq, payload };
-}
-
 /** Host → Client messages. Typed; the `type` discriminator is checked on receipt. */
 export type ServerMessage =
   | { v: 1; type: 'WELCOME'; playerId: string; roomId: string }
@@ -66,12 +55,3 @@ export type ServerErrorCode =
   | 'NOT_ALLOWED'
   | 'BAD_STATE'
   | 'VERSION_MISMATCH';
-
-export function isServerMessage(x: unknown): x is ServerMessage {
-  return (
-    typeof x === 'object' &&
-    x !== null &&
-    (x as { v?: unknown }).v === PROTOCOL_VERSION &&
-    typeof (x as { type?: unknown }).type === 'string'
-  );
-}

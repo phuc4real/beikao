@@ -3,9 +3,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
 
-// GitHub Pages project site is served from /beikao/.
-// Allow override via BASE_PATH for forks / custom domains.
-const base = process.env.BASE_PATH ?? '/beikao/';
+// Served at the domain root by the Cloudflare Worker (Static Assets) → base '/'.
+// The legacy GitHub Pages deploy (project site at /beikao/) still passes
+// BASE_PATH=/beikao/ in its build step until it's retired (migration plan §C4).
+const base = process.env.BASE_PATH ?? '/';
 
 export default defineConfig({
   base,

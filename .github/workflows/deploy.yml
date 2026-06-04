@@ -42,6 +42,9 @@ jobs:
       - run: npm run test
       - run: npm run build
         env:
+          # GitHub Pages serves this project site from /beikao/ (the Vite default
+          # is now '/' for the Cloudflare Worker, which serves at the domain root).
+          BASE_PATH: /beikao/
           # Supabase is the backend. These MUST be set (Actions secrets) for the
           # deployed app to function — without them the SPA can't create/join rooms.
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}

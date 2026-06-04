@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGame } from '@/app/store/store';
+import { ANIM } from '@/config/animation';
 import type { ChatMessage } from '@/features/room/types';
 
-const POPUP_MS = 6000; // how long a popup bubble lingers
+const POPUP_MS = ANIM.chatPopupMs; // how long a popup bubble lingers
 const POPUP_MAX = 3; // visible bubbles at once
 
 /** Messages of `chat` strictly after the one with id `afterId` (all if not found). */

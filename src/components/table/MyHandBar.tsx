@@ -3,6 +3,7 @@ import { TableCard } from '@/components/TableCard';
 import { GoldText } from '@/components/ui';
 import { handLabel, isCaoHand } from '@/components/handLabel';
 import { useDelayedTrue } from '@/app/hooks';
+import { ANIM } from '@/config/animation';
 import { DEAL_STEP_MS, dealSpanMs, FLIP_MS } from './seatGeometry';
 import { formatChips } from '@/utils/money';
 import type { RoundView } from '@/features/room/types';
@@ -22,9 +23,11 @@ export function MyHandBar({ round }: { round: RoundView }) {
   const playerCount = Math.max(1, players.length);
   const mySeat = Math.max(0, players.findIndex((p) => p.id === me?.id));
   const hand = me ? round.hands?.[me.id] : undefined;
-  const flipBase = dealSpanMs(playerCount) + (me?.isCai ? playerCount * 220 + 200 : 150);
-  // My last card starts flipping at flipBase + 2×130; fully visible FLIP_MS later.
-  const flipped = useDelayedTrue(hand ? flipBase + 2 * 130 + FLIP_MS : 0, round.roundNumber) && !!hand;
+  const flipBase =
+    dealSpanMs(playerCount) +
+    (me?.isCai ? playerCount * ANIM.seatFlipStaggerMs + ANIM.flipLeadMs : ANIM.conFlipLeadMs);
+  // My last card starts flipping at flipBase + 2×cardFlipStagger; fully visible FLIP_MS later.
+  const flipped = useDelayedTrue(hand ? flipBase + 2 * ANIM.cardFlipStaggerMs + FLIP_MS : 0, round.roundNumber) && !!hand;
 
   if (!me) return null;
 
@@ -53,7 +56,7 @@ export function MyHandBar({ round }: { round: RoundView }) {
                 size="lg"
                 flyIn
                 dealDelayMs={(i * playerCount + mySeat) * DEAL_STEP_MS}
-                flipDelayMs={i * 130 + flipBase}
+                flipDelayMs={i * ANIM.cardFlipStaggerMs + flipBase}
                 className={flipped ? (won ? 'card-glow' : lost ? 'card-dim' : '') : ''}
               />
             </div>

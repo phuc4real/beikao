@@ -586,7 +586,7 @@
   font-size: 14px;
   font-weight: 800;
   pointer-events: none;
-  animation: balanceFlash 2.2s ease-out forwards;
+  animation: balanceFlash var(--anim-balance-flash, 1200ms) ease-out forwards;
 }
 .balance-flash.up {
   color: var(--jade);
@@ -1065,13 +1065,13 @@
   width: 100%;
 }
 .phase-swap-enter {
-  animation: phaseEnter 0.32s ease both;
+  animation: phaseEnter var(--anim-phase-enter, 180ms) ease both;
 }
 .phase-swap-leave {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  animation: phaseLeave 0.26s ease both;
+  animation: phaseLeave var(--anim-phase-leave, 150ms) ease both;
 }
 @keyframes phaseEnter {
   from {

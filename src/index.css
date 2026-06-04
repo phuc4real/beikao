@@ -85,16 +85,18 @@ body {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  /* Durations come from the central ANIM config via --anim-* custom properties
+     (set by applyAnimationVars at startup); the literals here are fallbacks that
+     mirror src/config/animation.ts. Tune pacing in that file, not here. */
   .deal-in {
-    animation: deal-in 0.4s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+    animation: deal-in var(--anim-deal-in, 240ms) cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
   }
-  /* duration must match DEAL_FLIGHT_MS in table/seatGeometry.ts */
   .deal-fly {
-    animation: deal-fly 0.55s cubic-bezier(0.25, 0.8, 0.3, 1) backwards;
+    animation: deal-fly var(--anim-deal-flight, 300ms) cubic-bezier(0.25, 0.8, 0.3, 1) backwards;
     will-change: transform;
   }
   .flip-half {
-    transition: transform 0.25s ease-out; /* edge → flat (face just swapped) */
+    transition: transform var(--anim-flip-half, 130ms) ease-out; /* edge → flat (face just swapped) */
   }
   .flip-half.edge {
     transition-timing-function: ease-in; /* flat → edge (accelerate into the turn) */

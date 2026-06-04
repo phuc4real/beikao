@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { ANIM } from '@/config/animation';
 
 /**
  * Crossfades its children whenever `token` changes: the outgoing content fades
@@ -31,7 +32,7 @@ export function PhaseSwap({
 
   useEffect(() => {
     if (leaving == null) return;
-    const t = setTimeout(() => setLeaving(null), 280);
+    const t = setTimeout(() => setLeaving(null), ANIM.phaseLeaveMs);
     return () => clearTimeout(t);
   }, [leaving]);
 

@@ -4,6 +4,7 @@ import { Panel } from '@/components/ui';
 import { TableCard } from '@/components/TableCard';
 import { FairnessBadge } from '@/components/FairnessBadge';
 import { handLabel } from '@/components/handLabel';
+import { ANIM } from '@/config/animation';
 import { loadRounds, saveRounds } from '@/features/history/db';
 import type { RoundView } from '@/features/room/types';
 
@@ -109,7 +110,7 @@ function ReplayModal({ round, onClose }: { round: RoundView; onClose: () => void
                       key={`replay-${round.roundNumber}-${id}-${i}`}
                       card={hand.cards[i]}
                       revealed
-                      flipDelayMs={i * 90 + 100}
+                      flipDelayMs={i * ANIM.cardFlipStaggerMs + ANIM.replayLeadMs}
                     />
                   ))}
                   <span className="ml-auto text-sm">

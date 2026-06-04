@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { PlayingCard, CARD_SIZE_CLASS, type CardSize } from './PlayingCard';
+import { ANIM } from '@/config/animation';
 import type { Card } from '@/features/cao';
 
 /** Half of the flip (ms): face-down → edge-on, then edge-on → face-up.
-    Must match the `.flip-half` transition in index.css. */
-const FLIP_HALF_MS = 250;
+    Kept in lockstep with the `.flip-half` transition via --anim-flip-half. */
+const FLIP_HALF_MS = ANIM.flipHalfMs;
 
 /**
  * A seat card that animates: it cascades in face-down when dealt ("chia bài"),

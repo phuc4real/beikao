@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Coin, GoldText, Panel } from '@/components/ui';
 import { peekIdentity } from '@/network/cf/auth';
 import { claimDailyGift, claimTopup, fetchWallet, type Wallet } from '@/network/cf/profile';
+import { ANIM } from '@/config/animation';
 import { formatChips } from '@/utils/money';
 
 /** Today (YYYY-MM-DD) in VN time — mirrors the server's gift-day boundary. */
@@ -41,7 +42,7 @@ export function WalletPanel() {
   const credited = (balance: number, amount: number, extra?: Partial<Wallet>) => {
     setWallet({ ...wallet, ...extra, balance });
     setFlash({ amount, at: performance.now() });
-    setTimeout(() => setFlash(null), 2200);
+    setTimeout(() => setFlash(null), ANIM.balanceFlashMs);
   };
 
   const giftClaimed = wallet.lastGiftAt === vnToday();

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useGame } from '@/app/store/store';
+import { ANIM } from '@/config/animation';
 
 export function Toast() {
   const notice = useGame((s) => s.notice);
@@ -7,7 +8,7 @@ export function Toast() {
 
   useEffect(() => {
     if (!notice) return;
-    const id = setTimeout(clearNotice, 3000);
+    const id = setTimeout(clearNotice, ANIM.noticeMs);
     return () => clearTimeout(id);
   }, [notice, clearNotice]);
 

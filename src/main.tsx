@@ -11,6 +11,11 @@ import '@fontsource/be-vietnam-pro/900.css';
 import '@fontsource/playfair-display/latin-800.css'; // wordmark is Latin-only
 import './index.css';
 import './styles/theme.css';
+import { applyAnimationVars } from './config/animation';
+
+// Publish the animation timings (src/config/animation.ts) as --anim-* CSS vars
+// before first paint, so the stylesheet durations stay in lockstep with the JS.
+applyAnimationVars();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

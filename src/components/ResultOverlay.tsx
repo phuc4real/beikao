@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { selectMe, useGame } from '@/app/store/store';
 import { Button, GoldRule, GoldText } from '@/components/ui';
 import { TableCard } from '@/components/TableCard';
 import { handLabel, isCaoHand } from '@/components/handLabel';
 import { seatOutcome } from '@/components/table/outcome';
 import { revealSettleMs } from '@/components/table/seatGeometry';
+import { ANIM } from '@/config/animation';
 import { formatChips } from '@/utils/money';
 import type { RoundView } from '@/features/room/types';
 
@@ -32,13 +33,19 @@ export function ResultOverlay({ round }: { round: RoundView }) {
   const [dismissed, setDismissed] = useState(false);
   const roundNumber = round.roundNumber;
   const hasResult = !!result;
+  // Read the player count from a ref so the schedule below depends ONLY on the
+  // round: a player joining/leaving mid-REVEAL changes playerCount, and if that
+  // were a dependency the effect would re-run and re-show an already-dismissed
+  // overlay. The count is only needed to size the one-shot settle delay.
+  const playerCountRef = useRef(playerCount);
+  playerCountRef.current = playerCount;
   useEffect(() => {
     setShown(false);
     setDismissed(false);
     if (!hasResult) return;
-    const t = setTimeout(() => setShown(true), revealSettleMs(playerCount));
+    const t = setTimeout(() => setShown(true), revealSettleMs(playerCountRef.current));
     return () => clearTimeout(t);
-  }, [hasResult, roundNumber, playerCount]);
+  }, [hasResult, roundNumber]);
 
   if (!result || !shown || dismissed) return null;
 
@@ -83,7 +90,7 @@ export function ResultOverlay({ round }: { round: RoundView }) {
                   card={myHand.cards[i]}
                   revealed
                   size="md"
-                  flipDelayMs={i * 90 + 100}
+                  flipDelayMs={i * ANIM.cardFlipStaggerMs + ANIM.replayLeadMs}
                   className={won ? 'card-glow' : lost ? 'card-dim' : ''}
                 />
               </div>

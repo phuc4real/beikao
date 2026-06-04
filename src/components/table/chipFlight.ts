@@ -5,9 +5,11 @@
  * Animations API, never part of state or the protocol.
  */
 
+import { ANIM } from '@/config/animation';
+
 const CHIP_SIZE = 52; // matches .chip-btn
-const FLIGHT_MS = 700;
-const STAGGER_MS = 90;
+const FLIGHT_MS = ANIM.chipFlightMs;
+const STAGGER_MS = ANIM.chipStaggerMs;
 const CHIP_COUNT = 3;
 
 /** Fly chips from `from` (the bet button) to my seat pot. `label` rides the top chip. */

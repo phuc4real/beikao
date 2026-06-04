@@ -17,6 +17,7 @@ import { AnteControl } from '@/components/table/AnteControl';
 import { MyHandBar } from '@/components/table/MyHandBar';
 import { BeikaoEmblem } from '@/components/table/BeikaoEmblem';
 import { seatAngles, seatXY, revealSettleMs } from '@/components/table/seatGeometry';
+import { ANIM } from '@/config/animation';
 import { randomSeedHex } from '@/utils/crypto';
 import { formatChips } from '@/utils/money';
 import { avatarColor } from '@/utils/colors';
@@ -82,7 +83,7 @@ export function GameTable() {
   const copyLink = () => {
     navigator.clipboard?.writeText(shareLink).catch(() => {});
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    setTimeout(() => setCopied(false), ANIM.inviteCopiedMs);
   };
   const connected = room.players.filter((p) => p.connected);
   const readyCons = connected.filter((p) => !p.isCai && p.ready).length;
@@ -418,7 +419,7 @@ function BalanceFlash({ balance }: { balance: number }) {
     prev.current = balance;
     if (delta === 0) return;
     setFlash({ delta, at: performance.now() });
-    const t = setTimeout(() => setFlash(null), 2200);
+    const t = setTimeout(() => setFlash(null), ANIM.balanceFlashMs);
     return () => clearTimeout(t);
   }, [balance]);
 
@@ -471,7 +472,7 @@ function ClosedBanner({ roundNumber }: { roundNumber: number }) {
   const [show, setShow] = useState(false);
   useEffect(() => {
     setShow(true);
-    const t = setTimeout(() => setShow(false), 1400);
+    const t = setTimeout(() => setShow(false), ANIM.closedBannerMs);
     return () => clearTimeout(t);
   }, [roundNumber]);
   if (!show) return null;

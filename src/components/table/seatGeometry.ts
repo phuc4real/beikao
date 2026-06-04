@@ -1,3 +1,5 @@
+import { ANIM } from '@/config/animation';
+
 /**
  * Distribute n opponents along the upper arc of the elliptical felt
  * (the local player lives in the bottom hand bar, never on the felt).
@@ -15,19 +17,20 @@ export function seatXY(angle: number): { x: number; y: number } {
 
 /* ── Deal choreography ─────────────────────────────────────────────────
    After betting closes, cards fly from the deck (felt centre) to every
-   desk round-robin, card by card — like a real deal. */
+   desk round-robin, card by card — like a real deal. All timings come from
+   the central ANIM config (src/config/animation.ts) — tune pacing there. */
 
 /** Gap between two consecutive dealt cards. */
-export const DEAL_STEP_MS = 90;
-/** Flight time of one card (must match `.deal-fly` in index.css). */
-export const DEAL_FLIGHT_MS = 550;
+export const DEAL_STEP_MS = ANIM.dealStepMs;
+/** Flight time of one card (kept in lockstep with `.deal-fly` via --anim-deal-flight). */
+export const DEAL_FLIGHT_MS = ANIM.dealFlightMs;
 /** When the whole deal (3 cards × n seats) has landed — flips wait this out. */
 export function dealSpanMs(playerCount: number): number {
-  return 3 * playerCount * DEAL_STEP_MS + DEAL_FLIGHT_MS;
+  return 3 * playerCount * ANIM.dealStepMs + ANIM.dealFlightMs;
 }
 
 /** Full flip duration (both half-turns) — matches FLIP_HALF_MS in TableCard. */
-export const FLIP_MS = 500;
+export const FLIP_MS = ANIM.flipMs;
 
 /**
  * When card `i` (0..2) of a seat starts its reveal flip. Seats flip in seat
@@ -37,7 +40,7 @@ export const FLIP_MS = 500;
  * until then or they spoil the reveal.
  */
 export function seatFlipDelayMs(seatCount: number, seatIndex: number, isCai: boolean, i: number): number {
-  return dealSpanMs(seatCount) + (isCai ? seatCount : seatIndex) * 220 + i * 80 + 200;
+  return dealSpanMs(seatCount) + (isCai ? seatCount : seatIndex) * ANIM.seatFlipStaggerMs + i * ANIM.cardFlipStaggerMs + ANIM.flipLeadMs;
 }
 
 /**
@@ -47,5 +50,5 @@ export function seatFlipDelayMs(seatCount: number, seatIndex: number, isCai: boo
  * together instead of the balance jumping while cards are still face-down.
  */
 export function revealSettleMs(playerCount: number): number {
-  return dealSpanMs(playerCount) + playerCount * 220 + 1800;
+  return dealSpanMs(playerCount) + playerCount * ANIM.seatFlipStaggerMs + ANIM.settleBeatMs;
 }

@@ -2,7 +2,8 @@ import { TableCard } from '@/components/TableCard';
 import { Avatar } from '@/components/Avatar';
 import { handLabel, isCaoHand } from '@/components/handLabel';
 import { seatOutcome } from './outcome';
-import { DEAL_STEP_MS, dealSpanMs } from './seatGeometry';
+import { useDelayedTrue } from '@/app/hooks';
+import { DEAL_STEP_MS, FLIP_MS, seatFlipDelayMs } from './seatGeometry';
 import { formatChips } from '@/utils/money';
 import { avatarColor } from '@/utils/colors';
 import type { PlayerView, RoundView } from '@/features/room/types';
@@ -56,7 +57,12 @@ export function Seat({
     : betting
       ? player.isCai || (bet ?? 0) > 0
       : hand !== undefined;
-  const outcome = round && !betting ? seatOutcome(player, round) : null;
+  // Hold the points badge + win/lose dressing until this seat's last card has
+  // flipped — showing them on face-down cards would spoil the reveal.
+  const flipped =
+    useDelayedTrue(hand ? seatFlipDelayMs(seatCount, seatIndex, player.isCai, 2) + FLIP_MS : 0, round?.roundNumber) &&
+    !!hand;
+  const outcome = flipped && round && !betting ? seatOutcome(player, round) : null;
   const cardCls = outcome === 'win' ? 'card-glow' : outcome === 'lose' ? 'card-dim' : '';
 
   return (
@@ -83,7 +89,7 @@ export function Seat({
                 dealDelayMs={(i * seatCount + seatIndex) * DEAL_STEP_MS}
                 // Flips wait for the whole deal to land; the cái reveals LAST
                 // for suspense (base delay placed after every con).
-                flipDelayMs={dealSpanMs(seatCount) + (player.isCai ? seatCount : seatIndex) * 220 + i * 80 + 200}
+                flipDelayMs={seatFlipDelayMs(seatCount, seatIndex, player.isCai, i)}
                 className={cardCls}
               />
             </div>
@@ -110,7 +116,7 @@ export function Seat({
 
       {(bet ?? 0) > 0 && <BetPot amount={bet!} colorIdx={seatIndex} />}
 
-      {hand && (
+      {flipped && hand && (
         <div className={`seat-pts ${isCaoHand(hand) ? 'cao' : ''} ${outcome === 'win' ? 'win' : ''}`}>
           {handLabel(hand)}
         </div>

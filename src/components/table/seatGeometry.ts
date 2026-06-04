@@ -26,6 +26,20 @@ export function dealSpanMs(playerCount: number): number {
   return 3 * playerCount * DEAL_STEP_MS + DEAL_FLIGHT_MS;
 }
 
+/** Full flip duration (both half-turns) — matches FLIP_HALF_MS in TableCard. */
+export const FLIP_MS = 500;
+
+/**
+ * When card `i` (0..2) of a seat starts its reveal flip. Seats flip in seat
+ * order, the cái LAST (its base is placed after every con) for suspense.
+ * `seatFlipDelayMs(..., 2) + FLIP_MS` is therefore when that seat's hand is
+ * fully visible — result readouts (points badge, win/lose dressing) must wait
+ * until then or they spoil the reveal.
+ */
+export function seatFlipDelayMs(seatCount: number, seatIndex: number, isCai: boolean, i: number): number {
+  return dealSpanMs(seatCount) + (isCai ? seatCount : seatIndex) * 220 + i * 80 + 200;
+}
+
 /**
  * When the full REVEAL choreography is over: deal flight + the staggered flips
  * (the cái flips last) + a drama beat. The result overlay appears now, and the

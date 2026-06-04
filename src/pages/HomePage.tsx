@@ -1,44 +1,23 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Coin, GoldText, Panel } from '@/components/ui';
+import { Button, Panel } from '@/components/ui';
 import { Stage } from '@/components/Stage';
 import { BeikaoLogo } from '@/components/BeikaoLogo';
 import { RoomBrowser } from '@/components/RoomBrowser';
-import { Leaderboard } from '@/components/Leaderboard';
+import { WalletPanel } from '@/components/WalletPanel';
 import { useGame } from '@/app/store/store';
 import { isSupabaseConfigured } from '@/network/supabase/client';
-import { getCachedIdentity } from '@/network/supabase/auth';
-import { fetchProfileBalance } from '@/network/supabase/leaderboard';
 import { getStoredName } from '@/utils/storage';
-import { formatChips } from '@/utils/money';
 
 type Tab = 'create' | 'join' | 'browse';
 
-// Active-room discovery + leaderboard need the server-side directory/profiles.
+// Active-room discovery needs the server-side directory.
 const SHOW_BROWSE = isSupabaseConfigured();
-
-/** Durable cross-room wallet (only known once the player has a profile). */
-function useWalletBalance(): number | null {
-  const [balance, setBalance] = useState<number | null>(null);
-  useEffect(() => {
-    const id = getCachedIdentity();
-    if (!id) return;
-    let active = true;
-    void fetchProfileBalance(id).then((b) => {
-      if (active) setBalance(b);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-  return balance;
-}
 
 export function HomePage() {
   const navigate = useNavigate();
   const createRoom = useGame((s) => s.createRoom);
   const joinRoom = useGame((s) => s.joinRoom);
-  const wallet = useWalletBalance();
 
   const [tab, setTab] = useState<Tab>('create');
   const [name, setName] = useState(getStoredName);
@@ -87,20 +66,10 @@ export function HomePage() {
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 p-6">
       <Stage motif="fret" />
 
-      {/* Top bar: brand + wallet */}
+      {/* Top bar: brand + wallet (balance, nạp chip, daily gift) */}
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-gold/20 pb-4">
         <BeikaoLogo />
-        {wallet != null && (
-          <Panel className="flex items-center gap-3 !p-2 !pl-3.5">
-            <Coin />
-            <div className="pr-1">
-              <div className="text-[10px] uppercase tracking-wider text-pearl/55">Số dư</div>
-              <GoldText className="font-display text-lg font-extrabold leading-none">
-                {formatChips(wallet)}
-              </GoldText>
-            </div>
-          </Panel>
-        )}
+        <WalletPanel />
       </header>
 
       <div className="flex flex-1 flex-col items-center gap-8">
@@ -171,8 +140,6 @@ export function HomePage() {
             </Button>
           )}
         </Panel>
-
-        {SHOW_BROWSE && <Leaderboard />}
 
         <p className="max-w-sm text-center text-xs text-pearl/40">
           Chip ảo, chơi cho vui. Cái (người tạo phòng) chia bài và cũng chơi như mọi người.

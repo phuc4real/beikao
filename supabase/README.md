@@ -16,7 +16,9 @@ supabase/
 │   ├── 0006_indexes.sql              # rooms.updated_at + profiles leaderboard index
 │   ├── 0007_commit_room.sql          # atomic state+secrets write (1 round trip, OCC-gated)
 │   ├── 0008_intent_rpcs.sql          # load_room_state RPC (state+secrets+balance in 1 trip)
-│   └── 0009_schedule_tick.sql        # pg_cron + pg_net: invokes `tick` every 10 s
+│   ├── 0009_schedule_tick.sql        # pg_cron + pg_net: invokes `tick` every 10 s
+│   ├── 0010_drop_leaderboard.sql     # leaderboard view + index removed (UI dropped)
+│   └── 0011_wallet_topup.sql         # claim_topup (+2000) / claim_daily_gift (+1000/day), auth.uid()-keyed
 └── functions/
     ├── _shared/cors.ts
     ├── _shared/types.ts         # minimal Deno-side types
@@ -113,5 +115,5 @@ unchanged on Deno.
 
 - **3b finish:** ✅ verified end-to-end against the **hosted** stack (create → join → ready → start → bet → cron-tick deadline close → settle → leave/delete all exercised live). Realtime payload shape still only exercised via the app itself.
 - **3c:** ✅ presence-based disconnect — clients track Realtime **Presence**; a deterministic "reporter" (lowest present id) pushes the present set to `sync_presence`, which reconciles every seat's `connected` flag; the reporter heartbeats so the reaper can sweep dead rooms.
-- **3d:** ✅ active-room-discovery browser + public/private toggle; ✅ durable **stats + leaderboard**; ✅ **anonymous Supabase Auth** identity (persisted, upgradeable); ✅ **durable cross-room balances** (chips follow the player; new players granted the room's starting balance). Hardening left: derive the player id from the verified JWT server-side instead of trusting the request body.
+- **3d:** ✅ active-room-discovery browser + public/private toggle; ✅ durable **stats** (the leaderboard UI built on them was later removed for a lighter app — migration 0010 dropped the view; `record_round_result` stays because it writes the durable balances); ✅ **anonymous Supabase Auth** identity (persisted, upgradeable); ✅ **durable cross-room balances** (chips follow the player; new players granted the room's starting balance). Hardening left: derive the player id from the verified JWT server-side instead of trusting the request body.
 - **3e:** ✅ Supabase is the **only** backend — the PeerJS/TURN P2P transport (and the `VITE_BACKEND` flag) has been removed entirely.

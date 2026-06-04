@@ -1,0 +1,43 @@
+# Cloudflare Worker — beikao (see cloudflare_migration_plan.md §9.1).
+#
+# One Worker serves BOTH the built SPA (Static Assets) and the API/WS routes, so
+# the browser, the API, and the WebSocket are all same-origin. Phase C0 is a
+# scaffold: a health endpoint, anonymous-token minting, and a WS echo RoomDO used
+# only to measure round-trip latency vs. the ~1.3s Supabase baseline. The real
+# RoomDO/LobbyDO/D1 land in C1.
+
+name = "beikao"
+main = "cloudflare/src/worker.ts"
+compatibility_date = "2025-01-01"
+
+# Serve the Vite build output. With a `binding`, the Worker controls routing:
+# static assets that exist are served first; everything else invokes the Worker,
+# which handles /api/* + the WS upgrade and otherwise falls back to env.ASSETS
+# (index.html for SPA client routes via not_found_handling).
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# One Durable Object per room code (idFromName(code)). C0 stub: WS echo only.
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "RoomDO"
+
+# DO class migration (required to create the DO class).
+[[migrations]]
+tag = "v1"
+new_classes = ["RoomDO"]
+
+# D1, the LobbyDO, and the custom-domain route land in C1/C3 — they need
+# `wrangler d1 create beikao` and the domain on Cloudflare first. Until then this
+# deploys to the workers.dev preview host. Templates kept for reference:
+#
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "beikao"
+# database_id = "<from wrangler d1 create>"
+#
+# [[routes]]
+# pattern = "beikao.<domain>"
+# custom_domain = true

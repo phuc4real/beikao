@@ -283,10 +283,17 @@ export class GameAuthority {
         if (name) this.addChat(playerId, name, msg.text);
         return;
       }
+      // A spectator takes a free seat — only between rounds, never mid-betting.
+      case 'BECOME_PLAYER':
+        this.becomePlayer(playerId);
+        return;
     }
     if (!p) return; // remaining intentions require a seated player
 
     switch (msg.type) {
+      case 'BECOME_SPECTATOR':
+        this.becomeSpectator(p);
+        return;
       case 'SET_READY':
         if (this.state.status === 'LOBBY' && !p.isCai) {
           p.ready = msg.ready;
@@ -469,6 +476,51 @@ export class GameAuthority {
       return cai && cons.length > 0 ? [cai, ...cons] : [];
     }
     return this.state.players.filter((p) => (round.bets[p.id] ?? 0) > 0);
+  }
+
+  // ── seat ↔ spectator switching ────────────────────────────────────────
+  // Allowed only between rounds (LOBBY/REVEAL): a mid-betting switch would
+  // orphan a live stake or let someone dodge a settled loss.
+
+  /** A seated con steps back to watch. The cái can never leave the seat. */
+  private becomeSpectator(p: PlayerView): void {
+    if (this.state.status === 'BETTING') {
+      return this.reject(p.id, 'BAD_STATE', 'Đang trong lượt cược — chờ hết ván');
+    }
+    if (p.isCai) return this.reject(p.id, 'NOT_ALLOWED', 'Cái không thể chuyển sang xem');
+    if (this.state.spectators.length >= SPECTATOR_CAP) {
+      return this.reject(p.id, 'ROOM_FULL', 'Hết chỗ xem');
+    }
+    this.state.players = this.state.players.filter((q) => q.id !== p.id);
+    this.state.spectators.push({ id: p.id, name: p.name });
+    this.commit();
+  }
+
+  /**
+   * A spectator takes a free seat (ready=false, so they opt into the next
+   * round explicitly). The balance here is the P2P-legacy default; the Phase-3
+   * server overrides it from the durable profile right after (same as JOIN).
+   */
+  private becomePlayer(playerId: string): void {
+    const spec = this.state.spectators.find((s) => s.id === playerId);
+    if (!spec) return;
+    if (this.state.status === 'BETTING') {
+      return this.reject(playerId, 'BAD_STATE', 'Đang trong lượt cược — chờ hết ván');
+    }
+    const connectedCount = this.state.players.filter((p) => p.connected).length;
+    if (connectedCount >= this.state.config.maxPlayers) {
+      return this.reject(playerId, 'ROOM_FULL', 'Bàn đã đủ người chơi');
+    }
+    this.state.spectators = this.state.spectators.filter((s) => s.id !== playerId);
+    this.state.players.push({
+      id: playerId,
+      name: spec.name,
+      balance: this.state.config.startingBalance,
+      ready: false,
+      isCai: false,
+      connected: true,
+    });
+    this.commit();
   }
 
   /** Host edits room settings in the lobby. Validated by the protocol schema. */

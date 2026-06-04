@@ -158,3 +158,84 @@ describe('GameAuthority — Cào cái round', () => {
     expect(getState().status).toBe('LOBBY');
   });
 });
+
+describe('GameAuthority — seat ↔ spectator switching', () => {
+  it('lets a con step back to watch and a spectator take a seat (lobby)', () => {
+    const { authority, getState, errors } = makeAuthority();
+    active = authority;
+
+    authority.join('con', 'Bình');
+    authority.submit('con', { type: 'BECOME_SPECTATOR' });
+    let s = getState();
+    expect(s.players.some((p) => p.id === 'con')).toBe(false);
+    expect(s.spectators.some((x) => x.id === 'con')).toBe(true);
+
+    authority.submit('con', { type: 'BECOME_PLAYER' });
+    s = getState();
+    expect(s.spectators.some((x) => x.id === 'con')).toBe(false);
+    const seat = s.players.find((p) => p.id === 'con')!;
+    expect(seat.ready).toBe(false); // must opt into the next round explicitly
+    expect(seat.name).toBe('Bình'); // keeps the (already unique) name
+    expect(errors).toHaveLength(0);
+  });
+
+  it('blocks switching in either direction during BETTING', async () => {
+    const { authority, getState, errors } = makeAuthority();
+    active = authority;
+
+    authority.join('con', 'Bình');
+    authority.join('watcher', 'Xem', true);
+    authority.submit('con', { type: 'SET_READY', ready: true });
+    authority.submit('host', { type: 'START_ROUND' });
+    await waitFor(() => getState().status === 'BETTING');
+
+    authority.submit('con', { type: 'BECOME_SPECTATOR' });
+    authority.submit('watcher', { type: 'BECOME_PLAYER' });
+
+    const s = getState();
+    expect(s.players.some((p) => p.id === 'con')).toBe(true); // still seated
+    expect(s.spectators.some((x) => x.id === 'watcher')).toBe(true); // still watching
+    expect(errors.filter((e) => e.type === 'ERROR' && e.code === 'BAD_STATE')).toHaveLength(2);
+  });
+
+  it('allows switching at REVEAL (after the round settles)', async () => {
+    const { authority, getState } = makeAuthority();
+    active = authority;
+
+    authority.join('con', 'Bình');
+    authority.join('watcher', 'Xem', true);
+    authority.submit('con', { type: 'SET_READY', ready: true });
+    authority.submit('host', { type: 'START_ROUND' });
+    await waitFor(() => getState().status === 'BETTING');
+    authority.submit('con', { type: 'PLACE_BET', amount: 100 });
+    authority.submit('host', { type: 'CLOSE_BETTING' });
+    expect(getState().status).toBe('REVEAL');
+
+    authority.submit('con', { type: 'BECOME_SPECTATOR' });
+    authority.submit('watcher', { type: 'BECOME_PLAYER' });
+
+    const s = getState();
+    expect(s.spectators.some((x) => x.id === 'con')).toBe(true);
+    expect(s.players.some((p) => p.id === 'watcher')).toBe(true);
+  });
+
+  it('never lets the cái become a spectator, nor seats past capacity', () => {
+    const { authority, getState, errors } = makeAuthority();
+    active = authority;
+
+    // Fill the table (host + 15 cons = 16 = maxPlayers); overflow watches.
+    for (let i = 0; i < 15; i++) authority.join(`con${i}`, `P${i}`);
+
+    authority.submit('host', { type: 'BECOME_SPECTATOR' });
+    expect(getState().players.some((p) => p.isCai)).toBe(true);
+    expect(errors.some((e) => e.type === 'ERROR' && e.code === 'NOT_ALLOWED')).toBe(true);
+
+    authority.join('watcher', 'Xem', true);
+    authority.submit('watcher', { type: 'BECOME_PLAYER' });
+
+    const s = getState();
+    expect(s.players.some((p) => p.id === 'watcher')).toBe(false); // no free seat
+    expect(s.spectators.some((x) => x.id === 'watcher')).toBe(true);
+    expect(errors.some((e) => e.type === 'ERROR' && e.code === 'ROOM_FULL')).toBe(true);
+  });
+});

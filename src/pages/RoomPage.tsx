@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useGame } from '@/app/store/store';
 import { Button } from '@/components/ui';
 import { Stage } from '@/components/Stage';
-import { Lobby } from '@/components/Lobby';
 import { GameTable } from '@/components/GameTable';
 import { Toast } from '@/components/Toast';
 
@@ -53,7 +52,9 @@ export function RoomPage() {
   return (
     <>
       <Stage motif="cloud" />
-      {room.status === 'LOBBY' ? <Lobby /> : <GameTable />}
+      {/* One table screen for every status — GameTable renders the waiting
+          lobby itself when status === 'LOBBY' (round == null). */}
+      <GameTable />
       <Toast />
     </>
   );

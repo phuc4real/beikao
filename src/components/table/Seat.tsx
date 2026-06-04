@@ -2,12 +2,17 @@ import { TableCard } from '@/components/TableCard';
 import { Avatar } from '@/components/Avatar';
 import { handLabel, isCaoHand } from '@/components/handLabel';
 import { seatOutcome } from './outcome';
+import { DEAL_STEP_MS, dealSpanMs } from './seatGeometry';
 import { formatChips } from '@/utils/money';
 import type { PlayerView, RoundView } from '@/features/room/types';
 
 /**
  * One opponent seat on the felt arc: fanned card trio + info pill + points
  * badge after reveal. The local player never renders here (bottom bar).
+ * Without a `round` (LOBBY) the seat shows the waiting state instead: a
+ * cái / "✓ sẵn sàng" / "chưa" badge under the name, no cards or stake.
+ * During BETTING the seat holds only the avatar + stake; once betting closes
+ * the dealt cards fly in from the deck (felt centre), card by card.
  */
 export function Seat({
   player,
@@ -19,7 +24,8 @@ export function Seat({
   y,
 }: {
   player: PlayerView;
-  round: RoundView;
+  /** The active round — absent in LOBBY, which switches the seat to lobby mode. */
+  round?: RoundView;
   betting: boolean;
   /** Index in room.players — keeps avatar colour + reveal stagger stable. */
   seatIndex: number;
@@ -27,10 +33,14 @@ export function Seat({
   x: number;
   y: number;
 }) {
-  const hand = round.hands?.[player.id];
-  const bet = round.bets[player.id];
-  const inRound = betting ? player.isCai || (bet ?? 0) > 0 : hand !== undefined;
-  const outcome = !betting ? seatOutcome(player, round) : null;
+  const hand = round?.hands?.[player.id];
+  const bet = round?.bets[player.id];
+  const inRound = !round
+    ? player.connected
+    : betting
+      ? player.isCai || (bet ?? 0) > 0
+      : hand !== undefined;
+  const outcome = round && !betting ? seatOutcome(player, round) : null;
   const cardCls = outcome === 'win' ? 'card-glow' : outcome === 'lose' ? 'card-dim' : '';
 
   return (
@@ -40,7 +50,7 @@ export function Seat({
       }`}
       style={{ left: `${x}%`, top: `${y}%` }}
     >
-      {inRound && (
+      {round && hand && (
         <div className="seat-cards">
           {[0, 1, 2].map((i) => (
             <div
@@ -49,12 +59,15 @@ export function Seat({
               style={{ transform: `rotate(${(i - 1) * 8}deg)`, zIndex: i }}
             >
               <TableCard
-                card={hand?.cards[i]}
-                revealed={!!hand}
+                card={hand.cards[i]}
+                revealed
                 size="sm"
-                dealDelayMs={(i * seatCount + seatIndex) * 55}
-                // The cái reveals LAST for suspense: base delay placed after every con.
-                flipDelayMs={(player.isCai ? seatCount : seatIndex) * 220 + i * 80 + 200}
+                flyIn
+                // Round-robin like a real deal: card 0 to every seat, then card 1…
+                dealDelayMs={(i * seatCount + seatIndex) * DEAL_STEP_MS}
+                // Flips wait for the whole deal to land; the cái reveals LAST
+                // for suspense (base delay placed after every con).
+                flipDelayMs={dealSpanMs(seatCount) + (player.isCai ? seatCount : seatIndex) * 220 + i * 80 + 200}
                 className={cardCls}
               />
             </div>
@@ -67,6 +80,16 @@ export function Seat({
         <div className="seat-meta">
           <div className="seat-name">{player.name}</div>
           {(bet ?? 0) > 0 && <div className="seat-stake">⛃ {formatChips(bet!)}</div>}
+          {!round &&
+            (!player.connected ? (
+              <div className="seat-badge wait">mất kết nối</div>
+            ) : player.isCai ? (
+              <div className="seat-badge cai">cái 👑</div>
+            ) : player.ready ? (
+              <div className="seat-badge ready">✓ sẵn sàng</div>
+            ) : (
+              <div className="seat-badge wait">chưa sẵn sàng</div>
+            ))}
         </div>
       </div>
 

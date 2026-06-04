@@ -37,7 +37,7 @@ All multiplayer goes through **Supabase** (no WebRTC/TURN, no signaling broker):
 
 - ✅ Game engine (scoring, ba tiên, suit tie-break, settlement) — fully unit-tested; reused **verbatim** server-side in the Edge Functions
 - ✅ **Supabase backend (Phase 3, 3a–3e):** server-authoritative engine in Edge Functions, Postgres state + Realtime transport, server RNG, provably-fair commit–reveal, presence-based disconnect, anonymous Auth, durable cross-room balances, leaderboard, live room-discovery browser
-- ✅ UI: Home (create / join / browse / leaderboard) / Lobby / Game, betting timer, reveal, chat, reactions, history, spectator
+- ✅ UI: Home (create / join / browse / leaderboard) + a **single table screen** (the waiting lobby *is* the table), betting timer, card-deal + chip animations, reveal, chat with popup bubbles, reactions, history, spectator with seat↔watch switching between rounds
 - ✅ **UI v2 — "Lacquer & Gold"** (from `design_handoff_beikao/`): sơn mài red + gold-leaf design system, Be Vietnam Pro typography, SVG card faces with three selectable backs (trống đồng / phượng hoàng / hoa sen), elliptical felt table with arc seating, chip-button betting bar with countdown ring, result overlay; personal card-back/chip-style prefs in localStorage
 - 🗑️ The legacy host-authoritative **P2P/WebRTC (PeerJS) layer has been removed** (TDD §19)
 - ⏳ Persistent round history in Postgres, tournaments, JWT-derived server-side identity (see TDD phasing)

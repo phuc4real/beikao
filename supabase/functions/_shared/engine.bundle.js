@@ -467,9 +467,16 @@ var GameAuthority = class {
         if (name) this.addChat(playerId, name, msg.text);
         return;
       }
+      // A spectator takes a free seat — only between rounds, never mid-betting.
+      case "BECOME_PLAYER":
+        this.becomePlayer(playerId);
+        return;
     }
     if (!p) return;
     switch (msg.type) {
+      case "BECOME_SPECTATOR":
+        this.becomeSpectator(p);
+        return;
       case "SET_READY":
         if (this.state.status === "LOBBY" && !p.isCai) {
           p.ready = msg.ready;
@@ -626,6 +633,48 @@ var GameAuthority = class {
       return cai && cons.length > 0 ? [cai, ...cons] : [];
     }
     return this.state.players.filter((p) => (round.bets[p.id] ?? 0) > 0);
+  }
+  // ── seat ↔ spectator switching ────────────────────────────────────────
+  // Allowed only between rounds (LOBBY/REVEAL): a mid-betting switch would
+  // orphan a live stake or let someone dodge a settled loss.
+  /** A seated con steps back to watch. The cái can never leave the seat. */
+  becomeSpectator(p) {
+    if (this.state.status === "BETTING") {
+      return this.reject(p.id, "BAD_STATE", "\u0110ang trong l\u01B0\u1EE3t c\u01B0\u1EE3c \u2014 ch\u1EDD h\u1EBFt v\xE1n");
+    }
+    if (p.isCai) return this.reject(p.id, "NOT_ALLOWED", "C\xE1i kh\xF4ng th\u1EC3 chuy\u1EC3n sang xem");
+    if (this.state.spectators.length >= SPECTATOR_CAP) {
+      return this.reject(p.id, "ROOM_FULL", "H\u1EBFt ch\u1ED7 xem");
+    }
+    this.state.players = this.state.players.filter((q) => q.id !== p.id);
+    this.state.spectators.push({ id: p.id, name: p.name });
+    this.commit();
+  }
+  /**
+   * A spectator takes a free seat (ready=false, so they opt into the next
+   * round explicitly). The balance here is the P2P-legacy default; the Phase-3
+   * server overrides it from the durable profile right after (same as JOIN).
+   */
+  becomePlayer(playerId) {
+    const spec = this.state.spectators.find((s) => s.id === playerId);
+    if (!spec) return;
+    if (this.state.status === "BETTING") {
+      return this.reject(playerId, "BAD_STATE", "\u0110ang trong l\u01B0\u1EE3t c\u01B0\u1EE3c \u2014 ch\u1EDD h\u1EBFt v\xE1n");
+    }
+    const connectedCount = this.state.players.filter((p) => p.connected).length;
+    if (connectedCount >= this.state.config.maxPlayers) {
+      return this.reject(playerId, "ROOM_FULL", "B\xE0n \u0111\xE3 \u0111\u1EE7 ng\u01B0\u1EDDi ch\u01A1i");
+    }
+    this.state.spectators = this.state.spectators.filter((s) => s.id !== playerId);
+    this.state.players.push({
+      id: playerId,
+      name: spec.name,
+      balance: this.state.config.startingBalance,
+      ready: false,
+      isCai: false,
+      connected: true
+    });
+    this.commit();
   }
   /** Host edits room settings in the lobby. Validated by the protocol schema. */
   applyConfig(patch) {
@@ -4729,6 +4778,9 @@ var NEVER = INVALID;
 // src/network/protocol/messages.ts
 var intentionSchema = external_exports.discriminatedUnion("type", [
   external_exports.object({ type: external_exports.literal("JOIN"), name: external_exports.string().trim().min(1).max(20), spectator: external_exports.boolean().optional() }),
+  // Seat ↔ spectator switching between rounds (LOBBY/REVEAL, never mid-betting).
+  external_exports.object({ type: external_exports.literal("BECOME_SPECTATOR") }),
+  external_exports.object({ type: external_exports.literal("BECOME_PLAYER") }),
   external_exports.object({ type: external_exports.literal("SET_READY"), ready: external_exports.boolean() }),
   external_exports.object({ type: external_exports.literal("PLACE_BET"), amount: external_exports.number().int().positive() }),
   external_exports.object({ type: external_exports.literal("CLEAR_BET") }),

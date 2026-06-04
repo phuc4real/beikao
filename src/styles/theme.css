@@ -470,14 +470,106 @@
   opacity: 0.5;
   pointer-events: none;
 }
-.deal-status {
-  position: absolute;
-  bottom: 18%;
+/* felt-centre banner: the waiting room's room code + readiness (LOBBY) */
+.felt-banner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+.felt-banner-code {
   font-family: var(--display);
-  font-size: 18px;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.55));
+}
+.felt-banner-status {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
   color: var(--gold-light);
   letter-spacing: 0.08em;
+}
+.felt-banner-status.waiting {
   animation: glowPulse 1.2s infinite;
+}
+.felt-banner-count {
+  font-size: 12px;
+  color: rgba(246, 239, 224, 0.6);
+}
+
+/* low strip on the felt during BETTING: "X/Y con đã cược" for everyone */
+.felt-substatus {
+  position: absolute;
+  bottom: 16%;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  text-align: center;
+  font-family: var(--display);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: var(--gold-light);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* lobby invite pill under the felt: copies the share link */
+.invite-pill {
+  border: 1px dashed var(--gold-line);
+  border-radius: 999px;
+  padding: 8px 18px;
+  background: rgba(23, 4, 6, 0.55);
+  color: var(--gold-light);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.invite-pill:hover {
+  border-color: var(--gold);
+  background: rgba(23, 4, 6, 0.8);
+}
+
+/* +N/−N flash over the HUD balance when it changes */
+.balance-flash {
+  position: absolute;
+  right: 10px;
+  top: -15px;
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 800;
+  pointer-events: none;
+  animation: balanceFlash 2.2s ease-out forwards;
+}
+.balance-flash.up {
+  color: var(--jade);
+}
+.balance-flash.down {
+  color: #d9706f;
+}
+@keyframes balanceFlash {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
 }
 
 /* pot */
@@ -553,6 +645,21 @@
   font-size: 11px;
   color: var(--gold);
   white-space: nowrap;
+}
+/* lobby readiness badge under the seat name */
+.seat-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.seat-badge.ready {
+  color: var(--jade);
+}
+.seat-badge.cai {
+  color: var(--gold);
+}
+.seat-badge.wait {
+  color: rgba(246, 239, 224, 0.45);
 }
 .seat-pts {
   margin-top: 2px;
@@ -680,6 +787,15 @@
     0 0 0 3px var(--gold-light),
     0 8px 18px rgba(0, 0, 0, 0.5);
 }
+/* a bet-flight chip: a chip-btn clone flying from the bet bar to the pot
+   (spawned imperatively by chipFlight.ts, removed when its animation ends) */
+.chip-fly {
+  position: fixed;
+  margin: 0;
+  z-index: 60;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
 /* chip style: classic = dashed-ring casino chip */
 .chip-btn.classic {
   background: radial-gradient(circle at 35% 30%, #d8434a, #9e1b22 70%);
@@ -777,6 +893,20 @@
     justify-content: center;
     gap: 12px;
     padding: 12px;
+  }
+  .felt-banner-code {
+    font-size: 24px;
+  }
+  .felt-banner-status {
+    font-size: 12px;
+  }
+  .felt-substatus {
+    font-size: 11px;
+    bottom: 12%;
+  }
+  .invite-pill {
+    font-size: 12px;
+    padding: 7px 14px;
   }
   .pot-amt {
     font-size: 19px;

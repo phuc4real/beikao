@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGame } from '@/app/store/store';
+import type { ChatMessage } from '@/features/room/types';
 
 export function Chat({ className = '' }: { className?: string }) {
   const chat = useGame((s) => s.room?.chat ?? []);
@@ -43,6 +44,27 @@ export function Chat({ className = '' }: { className?: string }) {
           Gửi
         </button>
       </div>
+    </div>
+  );
+}
+
+/** The transient bubbles themselves; clicking any of them opens the drawer.
+    Fed by useChatPopups (own file — hooks break HMR fast-refresh here). */
+export function ChatPopups({ popups, onOpen }: { popups: ChatMessage[]; onOpen: () => void }) {
+  if (popups.length === 0) return null;
+  return (
+    <div className="flex flex-col items-end gap-1.5" aria-live="polite">
+      {popups.map((m) => (
+        <button
+          key={m.id}
+          onClick={onOpen}
+          className="panel max-w-[18rem] animate-fade-up cursor-pointer px-3 py-2 text-left text-sm shadow-soft"
+          title="Mở trò chuyện"
+        >
+          <span className="font-semibold text-gold">{m.name}: </span>
+          <span className="text-pearl/90">{m.text}</span>
+        </button>
+      ))}
     </div>
   );
 }

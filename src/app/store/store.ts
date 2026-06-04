@@ -40,6 +40,10 @@ interface AppState {
   updateConfig: (config: Partial<RoomConfig>) => void;
 
   setReady: (ready: boolean) => void;
+  /** Step back from my seat to watch-only (between rounds). */
+  becomeSpectator: () => void;
+  /** Take a free seat as a player again (between rounds). */
+  becomePlayer: () => void;
   placeBet: (amount: number) => void;
   clearBet: () => void;
   startRound: () => void;
@@ -174,6 +178,9 @@ export const useGame = create<AppState>((set, get) => {
     updateConfig: (config) => void command('config', { type: 'UPDATE_CONFIG', config }),
 
     setReady: (ready) => void command('ready', { type: 'SET_READY', ready }),
+    // One shared pending key: the two directions are mutually exclusive.
+    becomeSpectator: () => void command('seatswap', { type: 'BECOME_SPECTATOR' }),
+    becomePlayer: () => void command('seatswap', { type: 'BECOME_PLAYER' }),
     placeBet: (amount) => void command('bet', { type: 'PLACE_BET', amount }),
     clearBet: () => void command('bet', { type: 'CLEAR_BET' }),
     startRound: () => void command('start', { type: 'START_ROUND' }),

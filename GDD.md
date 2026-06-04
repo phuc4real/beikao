@@ -132,7 +132,7 @@ Money is tracked in **integer chip units** (no floats). No real progression/leve
 | --- | --- | --- | --- |
 | **Cái (dealer / host)** | ✅ Plays a hand | ✅ Yes | The host. Deals, holds the bank, and **plays a real 3-card hand** that every con compares against. Counts toward the table cap. |
 | **Con (player)** | ✅ Yes | ❌ No | Standard participant; bets against the cái. |
-| **Spectator** (Phase 2) | ❌ No | ❌ No | Watches a full/in-progress room. |
+| **Spectator** (Phase 2) | ❌ No | ❌ No | Watches a full/in-progress room. Between rounds (lobby/results — never mid-betting) a spectator may take a free seat, and a con may step back to watch-only; the cái can never leave the seat. |
 
 **Host = cái — design intent:** the host is a participant first and an authority second. Bài cào *has* a natural dealer role, so "host plays too" fits the game cleanly: the host is the cái. Authority is invisible during play — the cái has no information edge and their hand is dealt and scored by the same rules and (optionally) the same provably-fair deck as everyone else. Authority only matters operationally (owns the deck, starts rounds, configures the room).
 
@@ -169,7 +169,7 @@ Based on the three traditional Bài cào variants:
 | **Challenge** | **Cào thách** | Phase 2 | Players may privately wager head-to-head against each other in addition to the table. |
 | **Casual (trust)** | — | MVP | Provably-fair disabled; fastest. |
 | **Verified (provably fair)** | — | Phase 2 | Commit–reveal shuffle with per-round verification. |
-| **Spectator** | — | Phase 2 | Watch-only seats. |
+| **Spectator** | — | Phase 2 | Watch-only seats; switchable with a player seat between rounds (see §6). |
 
 ---
 
@@ -177,9 +177,11 @@ Based on the three traditional Bài cào variants:
 
 ### 9.1 Screens
 ```text
-Home ──► (Create | Join by code | Browse rooms*) ──► Lobby ──► Game Table ──► (Results overlay) ──► Lobby/Game
+Home ──► (Create | Join by code | Browse rooms*) ──► Game Table ──► (Results overlay) ──► Game Table
                               (* Browse rooms = active room discovery, Phase 3 — §9.6)
 ```
+
+> **One table screen (implemented):** the waiting lobby is not a separate screen — it *is* the game table in its waiting state. Players sit at the felt while readying up (room code + readiness on the felt centre, ready/start controls in the bottom bar, invite pill for empty seats); the round UI takes over the same layout in place when the cái deals, so nothing jarringly swaps.
 
 ### 9.2 Home
 ```text
@@ -190,17 +192,21 @@ Home ──► (Create | Join by code | Browse rooms*) ──► Lobby ──►
    (nhập tên / enter name)
 ```
 
-### 9.3 Lobby
+### 9.3 Lobby (the table's waiting state)
 ```text
-Phòng: BAC-8249           Cái: Alex
-Người chơi (3/8)
- ★ Alex     $1000  ✓ sẵn sàng   (cái — plays too)
-   Bình     $1000  ✓ sẵn sàng
-   Châu     $1000  … chưa
+Phòng BAC-8249  ⧉ Link        Cào cái · 3/8        Số dư: $1000
+        ╭───────────────────────────────────╮
+     (Bình ✓ sẵn sàng)         (Châu … chưa)
+   ╱                                         ╲
+  │                BAC-8249                   │
+  │          Chờ người chơi…  1/2             │
+   ╲                                         ╱
+        ╰───────────────────────────────╯
+          [ ＋ 5 chỗ trống — mời bạn bè ]
 
- [ Sẵn sàng / Ready ]    [ Cài đặt / Settings ]  (cái)
- [ Chia bài / Start Round ]  (cái, ≥1 con ready)
- Chat: ____________________  [Gửi]
+ [ Sẵn sàng / Ready ]  [ 👁 Chuyển sang xem ]      (con)
+ [ Chia bài / Start Round ]  (cái, ≥1 con ready; ⚙ settings in drawer)
+ Chat / reactions / history drawers — same as in-game
 ```
 
 ### 9.4 Game table

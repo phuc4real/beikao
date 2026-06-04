@@ -17,6 +17,9 @@ export const REACTIONS = ['😂', '🔥', '😱', '👏', '😎', '💰', '😭'
  */
 export const intentionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('JOIN'), name: z.string().trim().min(1).max(20), spectator: z.boolean().optional() }),
+  // Seat ↔ spectator switching between rounds (LOBBY/REVEAL, never mid-betting).
+  z.object({ type: z.literal('BECOME_SPECTATOR') }),
+  z.object({ type: z.literal('BECOME_PLAYER') }),
   z.object({ type: z.literal('SET_READY'), ready: z.boolean() }),
   z.object({ type: z.literal('PLACE_BET'), amount: z.number().int().positive() }),
   z.object({ type: z.literal('CLEAR_BET') }),

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { selectMe, useGame } from '@/app/store/store';
 import { Button, GoldText, Panel } from '@/components/ui';
 import { TimerRing } from './TimerRing';
+import { flyChipsToPot } from './chipFlight';
 import { usePrefs } from '@/utils/prefs';
 import { formatChips, moneyShort } from '@/utils/money';
 
@@ -37,23 +38,26 @@ export function BettingBar() {
     return <Panel className="w-full max-w-xl text-center text-red-300">Không đủ chip để cược.</Panel>;
   }
 
-  // Quick chips: min ×1/5/10/25/50, deduped after clamping to what I can bet.
-  const chips = [...new Set([1, 5, 10, 25, 50].map((m) => Math.min(m * minBet, ceiling)))];
+  // Quick chips are *additive* denominations (min ×1/5/10/25/50): each click
+  // stacks its value onto the stake (clamped to the ceiling) instead of
+  // radio-selecting a fixed amount. Only denominations I can afford show up.
+  const chips = [1, 5, 10, 25, 50].map((m) => m * minBet).filter((v) => v > 0 && v <= ceiling);
   const step = (d: number) => setAmount((a) => Math.min(ceiling, Math.max(minBet, a + d)));
 
   return (
     <div className="bet-bar panel panel-gilt w-full max-w-3xl justify-center">
       <TimerRing endsAt={round.endsAt} total={bettingSeconds} />
 
-      <div className="bet-chips" role="group" aria-label="Cược nhanh">
+      <div className="bet-chips" role="group" aria-label="Thêm cược nhanh">
         {chips.map((c) => (
           <button
             key={c}
-            className={`chip-btn ${chipStyle} ${amount === c ? 'sel' : ''}`}
-            onClick={() => setAmount(c)}
-            aria-pressed={amount === c}
+            className={`chip-btn ${chipStyle}`}
+            onClick={() => step(c)}
+            disabled={amount >= ceiling}
+            aria-label={`Thêm ${moneyShort(c)}`}
           >
-            <span className="chip-face">{moneyShort(c)}</span>
+            <span className="chip-face">+{moneyShort(c)}</span>
           </button>
         ))}
       </div>
@@ -71,11 +75,27 @@ export function BettingBar() {
           <button className="btn-ghost rounded-md px-2 text-xs font-semibold" onClick={() => setAmount(ceiling)}>
             Tối đa
           </button>
+          <button
+            className="btn-ghost rounded-md px-2 text-xs font-semibold"
+            onClick={() => setAmount(minBet)}
+            disabled={amount <= minBet}
+          >
+            Đặt lại
+          </button>
         </span>
       </div>
 
       <div className="flex flex-col items-stretch gap-1.5">
-        <Button className="px-6 py-3" onClick={() => placeBet(amount)} loading={betPending}>
+        <Button
+          className="px-6 py-3"
+          onClick={(e) => {
+            // Chips fly to the pot immediately — instant feedback that masks
+            // the ~1s intent round trip (the pending state still spins below).
+            flyChipsToPot(e.currentTarget, chipStyle, moneyShort(amount));
+            placeBet(amount);
+          }}
+          loading={betPending}
+        >
           {currentBet ? `Đổi cược (${formatChips(currentBet)})` : 'Đặt cược'}
         </Button>
         {currentBet != null && (

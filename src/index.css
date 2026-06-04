@@ -31,6 +31,23 @@ body {
   }
 }
 
+/* "Chia bài" v2: a dealt card flies face-down from the deck (felt centre) to
+   its seat. --deal-dx/--deal-dy (offset back to the deck) are measured per
+   card by TableCard right before first paint. */
+@keyframes deal-fly {
+  from {
+    opacity: 0;
+    transform: translate(var(--deal-dx, 0px), var(--deal-dy, 0px)) rotate(-14deg) scale(0.6);
+  }
+  20% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .card3d {
   perspective: 700px;
 }
@@ -75,6 +92,11 @@ body {
 @media (prefers-reduced-motion: no-preference) {
   .deal-in {
     animation: deal-in 0.4s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+  }
+  /* duration must match DEAL_FLIGHT_MS in table/seatGeometry.ts */
+  .deal-fly {
+    animation: deal-fly 0.55s cubic-bezier(0.25, 0.8, 0.3, 1) backwards;
+    will-change: transform;
   }
   .flip-inner {
     transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.3, 1);

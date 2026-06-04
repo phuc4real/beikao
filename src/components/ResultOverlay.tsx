@@ -4,6 +4,7 @@ import { Button, GoldRule, GoldText } from '@/components/ui';
 import { TableCard } from '@/components/TableCard';
 import { handLabel, isCaoHand } from '@/components/handLabel';
 import { seatOutcome } from '@/components/table/outcome';
+import { dealSpanMs } from '@/components/table/seatGeometry';
 import { formatChips } from '@/utils/money';
 import type { RoundView } from '@/features/room/types';
 
@@ -26,7 +27,7 @@ export function ResultOverlay({ round }: { round: RoundView }) {
   const result = round.result;
   const playerCount = players.length;
 
-  // Let the table's flip drama play out first (the cái flips last).
+  // Let the table's deal flight + flip drama play out first (the cái flips last).
   const [shown, setShown] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const roundNumber = round.roundNumber;
@@ -35,7 +36,7 @@ export function ResultOverlay({ round }: { round: RoundView }) {
     setShown(false);
     setDismissed(false);
     if (!hasResult) return;
-    const t = setTimeout(() => setShown(true), playerCount * 220 + 1800);
+    const t = setTimeout(() => setShown(true), dealSpanMs(playerCount) + playerCount * 220 + 1800);
     return () => clearTimeout(t);
   }, [hasResult, roundNumber, playerCount]);
 

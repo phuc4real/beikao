@@ -155,6 +155,8 @@ interface Envelope<T = unknown> {
 | --- | --- | --- |
 | `PLAYER_JOIN` | `{ name, sessionId? }` | sessionId for reconnection. |
 | `SET_READY` | `{ ready }` | |
+| `BECOME_SPECTATOR` | `{}` | seated con → watch-only. LOBBY/REVEAL only (rejected mid-BETTING); never the cái. |
+| `BECOME_PLAYER` | `{}` | spectator → free seat (`ready=false`; balance re-seeded from the durable profile, like JOIN). LOBBY/REVEAL only. |
 | `PLACE_BET` | `{ amount }` | con's stake against the cái (single bet — no bet *type* in Bài cào). |
 | `CLEAR_BET` | `{}` | |
 | `SEED_COMMIT` | `{ hash }` | provably-fair (Phase 2). |

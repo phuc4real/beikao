@@ -2,20 +2,24 @@ import { selectMe, useGame } from '@/app/store/store';
 import { TableCard } from '@/components/TableCard';
 import { GoldText } from '@/components/ui';
 import { handLabel, isCaoHand } from '@/components/handLabel';
+import { DEAL_STEP_MS, dealSpanMs } from './seatGeometry';
 import { formatChips } from '@/utils/money';
 import type { RoundView } from '@/features/room/types';
 
 /**
- * The local player's big hand + readout at REVEAL. Matches the table drama:
- * if I'm the cái, my cards flip only after every con's.
+ * The local player's big hand + readout at REVEAL: my cards fly in from the
+ * deck in the same round-robin deal as the seats, then flip. Matches the
+ * table drama: if I'm the cái, my cards flip only after every con's.
  */
 export function MyHandBar({ round }: { round: RoundView }) {
   const me = useGame(selectMe);
-  const playerCount = useGame((s) => s.room?.players.length ?? 1);
+  const players = useGame((s) => s.room?.players ?? []);
   if (!me) return null;
 
+  const playerCount = Math.max(1, players.length);
+  const mySeat = Math.max(0, players.findIndex((p) => p.id === me.id));
   const hand = round.hands?.[me.id];
-  const flipBase = me.isCai ? playerCount * 220 + 200 : 150;
+  const flipBase = dealSpanMs(playerCount) + (me.isCai ? playerCount * 220 + 200 : 150);
   const delta = round.result?.deltas[me.id];
   const outcome = round.result?.outcomes?.[me.id];
   const isPotWinner = round.result?.potWinner === me.id;
@@ -39,7 +43,8 @@ export function MyHandBar({ round }: { round: RoundView }) {
                 card={hand.cards[i]}
                 revealed
                 size="lg"
-                dealDelayMs={i * 80}
+                flyIn
+                dealDelayMs={(i * playerCount + mySeat) * DEAL_STEP_MS}
                 flipDelayMs={i * 130 + flipBase}
                 className={won ? 'card-glow' : lost ? 'card-dim' : ''}
               />

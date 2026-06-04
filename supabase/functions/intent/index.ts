@@ -104,7 +104,9 @@ async function createRoom(body: Body): Promise<Response> {
 }
 
 async function runIntent(body: Body, intention: Intention): Promise<Response> {
-  const isJoin = intention.type === 'JOIN';
+  // Ops that (may) put the player in a seat need their durable balance loaded
+  // so the fresh seat is seeded from the profile, not the room default.
+  const isJoin = intention.type === 'JOIN' || intention.type === 'BECOME_PLAYER';
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     // One round trip: state + secrets (+ the joiner's durable balance on JOIN),
     // instead of two parallel reads plus a separate balance lookup.

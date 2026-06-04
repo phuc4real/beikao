@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import type { ReactionMsg, RoomConfig, RoomState } from '@/features/room/types';
 import type { Intention } from '@/network/protocol/messages';
-import { SupabaseSession } from '@/app/session/supabaseSession';
-import { isSupabaseConfigured } from '@/network/supabase/client';
-import { ensureIdentity } from '@/network/supabase/auth';
+import { CloudflareSession } from '@/app/session/cloudflareSession';
+import { ensureIdentity } from '@/network/cf/auth';
+import { getToken } from '@/network/cf/apiClient';
 import type { ConnStatus, Session, SessionHooks } from '@/app/session/types';
 import { genRoomCode } from '@/utils/id';
 import { clearSession, loadSession, saveSession, setStoredName } from '@/utils/storage';
@@ -131,10 +131,6 @@ export const useGame = create<AppState>((set, get) => {
 
     createRoom: async (name, config, isPublic = true) => {
       session?.leave();
-      if (!isSupabaseConfigured()) {
-        set({ status: 'error', fatal: 'Cần cấu hình Supabase (VITE_SUPABASE_URL / ANON_KEY).' });
-        return;
-      }
       const roomId = genRoomCode();
       setStoredName(name);
       set({ status: 'connecting', fatal: null, notice: null, room: null, reactions: [] });
@@ -145,26 +141,22 @@ export const useGame = create<AppState>((set, get) => {
       // reload (handled in tryReconnect as a normal JOIN). `isPublic` controls
       // whether the room is listed in the discovery browser (§19.9).
       saveSession({ roomId, name, isHost: true, spectator: false });
-      session = new SupabaseSession(
-        { roomId, playerId, name, role: 'host', config: config ?? {}, isPublic },
+      session = new CloudflareSession(
+        { roomId, playerId, name, role: 'host', config: config ?? {}, isPublic, token: getToken() ?? '' },
         hooksWithSessionGuard(name),
       );
     },
 
     joinRoom: async (code, name, asSpectator = false) => {
       session?.leave();
-      if (!isSupabaseConfigured()) {
-        set({ status: 'error', fatal: 'Cần cấu hình Supabase (VITE_SUPABASE_URL / ANON_KEY).' });
-        return;
-      }
       const roomId = code.trim().toUpperCase();
       setStoredName(name);
       saveSession({ roomId, name, isHost: false, spectator: asSpectator });
       set({ status: 'connecting', fatal: null, notice: null, room: null, reactions: [] });
       const playerId = await ensureIdentity();
       set({ me: { playerId, name } });
-      session = new SupabaseSession(
-        { roomId, playerId, name, role: 'client', spectator: asSpectator },
+      session = new CloudflareSession(
+        { roomId, playerId, name, role: 'client', spectator: asSpectator, token: getToken() ?? '' },
         hooksWithSessionGuard(name),
       );
     },

@@ -3,5 +3,10 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
-  ]
+  ],
+  "comment": "Solution-style root (files: [] → compiles nothing itself; the references typecheck with their own paths). These `paths` exist for esbuild: when wrangler bundles the Worker it reuses src/ verbatim, and esbuild reads the NEAREST tsconfig to each src/ file (this one) to resolve the `@/*` alias.",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] }
+  }
 }

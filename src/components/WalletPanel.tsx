@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Coin, GoldText, Panel } from '@/components/ui';
-import { peekIdentity } from '@/network/supabase/auth';
-import { claimDailyGift, claimTopup, fetchWallet, type Wallet } from '@/network/supabase/profile';
+import { peekIdentity } from '@/network/cf/auth';
+import { claimDailyGift, claimTopup, fetchWallet, type Wallet } from '@/network/cf/profile';
 import { formatChips } from '@/utils/money';
 
 /** Today (YYYY-MM-DD) in VN time — mirrors the server's gift-day boundary. */

@@ -9,11 +9,9 @@ module.exports = {
   parser: '@typescript-eslint/parser',
   parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
   plugins: ['@typescript-eslint', 'react-hooks', 'react-refresh'],
-  // `supabase/` holds Deno Edge Functions (npm:/jsr: imports, Deno globals) —
-  // linted/typechecked by the Supabase CLi (deno), not this app's ESLint/tsc.
   // `cloudflare/` holds the Worker + Durable Objects (Workers runtime globals,
   // @cloudflare/workers-types) — typechecked by `npm run cf:typecheck` instead.
-  ignorePatterns: ['dist', 'node_modules', '*.config.js', '*.config.ts', 'supabase', 'scripts', 'cloudflare'],
+  ignorePatterns: ['dist', 'node_modules', '*.config.js', '*.config.ts', 'cloudflare'],
   rules: {
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     'react-hooks/rules-of-hooks': 'error',

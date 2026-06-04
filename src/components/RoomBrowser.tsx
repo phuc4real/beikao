@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { fetchDirectory, subscribeDirectory, type DirectoryRoom } from '@/network/supabase/rooms';
+import { fetchDirectory, subscribeDirectory, type DirectoryRoom } from '@/network/cf/rooms';
 
 const MODE_LABEL: Record<DirectoryRoom['mode'], string> = {
   CAO_CAI: 'Cào cái',

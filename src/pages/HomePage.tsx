@@ -6,13 +6,12 @@ import { BeikaoLogo } from '@/components/BeikaoLogo';
 import { RoomBrowser } from '@/components/RoomBrowser';
 import { WalletPanel } from '@/components/WalletPanel';
 import { useGame } from '@/app/store/store';
-import { isSupabaseConfigured } from '@/network/supabase/client';
 import { getStoredName } from '@/utils/storage';
 
 type Tab = 'create' | 'join' | 'browse';
 
-// Active-room discovery needs the server-side directory.
-const SHOW_BROWSE = isSupabaseConfigured();
+// The Cloudflare backend is always same-origin, so the room browser is available.
+const SHOW_BROWSE = true;
 
 export function HomePage() {
   const navigate = useNavigate();

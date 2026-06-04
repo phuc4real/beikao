@@ -4,8 +4,7 @@ import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
 
 // Served at the domain root by the Cloudflare Worker (Static Assets) → base '/'.
-// The legacy GitHub Pages deploy (project site at /beikao/) still passes
-// BASE_PATH=/beikao/ in its build step until it's retired (migration plan §C4).
+// BASE_PATH can still override it for a subpath host if ever needed.
 const base = process.env.BASE_PATH ?? '/';
 
 export default defineConfig({

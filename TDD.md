@@ -689,3 +689,40 @@ P2P traded backend cost for client complexity + a mandatory TURN relay (the one 
 - `RoomState` / `RoomConfig` shapes and the Zod intention schemas.
 - The Zustand store, all React components, and the `Session` interface contract.
 - Core invariants: clients send intentions not results; hidden hands withheld until REVEAL (now DB-enforced); integer chips only; server (was host) owns the clock; no authority code branches on who is the cái.
+
+## 20. Cloudflare backend (current — supersedes §19 Supabase)
+
+The backend moved off Supabase onto **Cloudflare** as a migration, not a rewrite —
+same approach as §19: reuse the engine + `GameAuthority` verbatim behind the
+existing `Session` seam. Full rationale in `cloudflare_migration_plan.md`; ops in
+`cloudflare/README.md`. The §19 Supabase content is retained as history only.
+
+**Shape.** One **Worker** (`cloudflare/src/worker.ts`) serves the built SPA via the
+**Static Assets** binding *and* routes the API/WS — so browser, API, and WebSocket
+are same-origin (no CORS, no `VITE_*` URL). Per-room state lives in a **Durable
+Object** (`RoomDO`, `idFromName(code)`): it holds the warm `GameAuthority`, the open
+WebSocket set, and a betting-deadline **Alarm**, persisting `{state, secrets}` to DO
+storage on every commit (lossless rehydrate after eviction). A single **`LobbyDO`**
+relays room-directory change pings. **D1** holds the only cross-room data —
+`profiles` (durable balances + stats + wallet) and `room_directory`.
+
+**Supabase → Cloudflare mapping.** Edge Function `intent` → `RoomDO` WS handlers;
+`tick`/`pg_cron` → `RoomDO.alarm()`; Realtime changes → `STATE` frames; Realtime
+presence → the DO's exact open-socket set; Realtime broadcast (reactions) → DO relay;
+`rooms.state` jsonb + OCC `version` → DO storage (single-threaded, so the OCC/retry
+loop is gone); `room_secrets` + RLS → DO private storage; `room_directory` view →
+D1 table + `LobbyDO`; profile RPCs → D1 + Worker handlers; anonymous Supabase Auth →
+a **Worker-minted signed token** (HMAC over `{uid}`, `AUTH_SIGNING_KEY`); GitHub Pages
++ Actions → the same Worker + **Cloudflare Workers Builds** (production branch
+`release/worker`). The Deno import-map + `build:functions` bundle step is gone — the
+Worker imports `src/` directly (esbuild resolves `@/` via the root-tsconfig `paths`).
+
+**WS protocol** (`src/network/cf/protocol.ts`, shared client+DO). Client→server:
+`HELLO {token,name,role,…}` (verify token → create or idempotent JOIN), `INTENT
+{intention}` (re-validated by `intentionSchema`), `REACTION {emoji}` (relayed, never
+hits the authority), `LEAVE {permanent}`. Server→client: `STATE {state}` → `onState`;
+`SERVER {msg}` (WELCOME/ERROR/SNAPSHOT/CLOSED) → `onServerMessage`; `REACTION
+{reaction}` → `onReaction`. `CloudflareSession` resolves `send()` on the echoed
+STATE/ERROR (keeps the store's pending/optimistic logic working) and auto-reconnects
+with an idempotent re-HELLO; fatal close codes (`1008` bad token, `4004` no room)
+stop the loop. The §19.12 invariants and "what stays the same" list still hold.

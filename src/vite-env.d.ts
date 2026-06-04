@@ -1,9 +1,9 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  // Supabase server-authoritative backend (the only backend; see TDD §19).
-  readonly VITE_SUPABASE_URL?: string;
-  readonly VITE_SUPABASE_ANON_KEY?: string;
+  // No app-specific env vars: the Cloudflare backend is same-origin, so the
+  // client derives the API/WS URLs from window.location (no VITE_* config).
+  readonly _placeholder?: never;
 }
 
 interface ImportMeta {

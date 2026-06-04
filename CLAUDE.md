@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-The MVP **plus Phase 2** is implemented and green, and **Phase 3 completed the migration to a server-authoritative Supabase backend** — the P2P/PeerJS networking layer has been **removed** (only comments and the historical Phase 3 notes below still mention it). The app is a Vite + React + TS SPA with a fully-tested game engine, a single Supabase-backed `Session`, and the Home/Room UI (the waiting lobby and the game share **one table screen** — see Code map). `npm run build`, `npm run lint`, and `npm run test` (47 tests) all pass; CI (`.github/workflows/deploy.yml`, Node 22) **requires** the `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` secrets (it fails fast if they're empty), runs typecheck + lint + test + build, then deploys to Pages. See the Phase 3 section below and `supabase/README.md`.
+The MVP **plus Phase 2** is implemented and green. The backend has migrated **from Supabase to Cloudflare** — one **Worker** serves the SPA (Static Assets) **and** the API/WS same-origin, a per-room **Durable Object** (`RoomDO`) holds the `GameAuthority` + the WebSocket set + the betting-deadline alarm, and **D1** holds durable balances + the room directory. Both the earlier P2P/PeerJS layer and the Supabase backend have been **removed**. The app is a Vite + React + TS SPA with a fully-tested game engine, a single Cloudflare-backed `Session` (`CloudflareSession`), and the Home/Room UI (the waiting lobby and the game share **one table screen** — see Code map). `npm run build`, `npm run lint`, `npm run test` (54 tests), and `npm run cf:typecheck` all pass. Deploys go through **Cloudflare Workers Builds** (connected repo, production branch `release/worker`) — there is no GitHub Actions workflow. Backend setup/deploy: **`cloudflare/README.md`**; the design rationale: `cloudflare_migration_plan.md`.
 
 **UI v2 ("Lacquer & Gold") is implemented** from the `design_handoff_beikao/` handoff per `beikao_ui_v2_plan.md` — a presentation-only refactor (engine/authority/protocol untouched): design tokens in `src/styles/theme.css` (mirrored in `tailwind.config.js`), Be Vietnam Pro / Playfair Display via `@fontsource`, card faces + three card backs (`src/components/cards/` — faces are simplified: corner indices + big centre rank/suit, courts framed; no pip grids; the `TableCard` flip is a **midpoint face-swap** — turn edge-on, swap the single rendered face, turn back — deliberately not a coplanar two-face `preserve-3d`/`backface-visibility` flip, which mis-renders on some GPU/display-scaling combos), elliptical felt table with arc seating (`src/components/table/`), result overlay, and client-only cosmetic prefs (`src/utils/prefs.ts`, localStorage). Vietnamese text must always render in Be Vietnam Pro (Playfair is for the Latin "BEIKAO" wordmark only); money displays use `vi-VN` grouping via `src/utils/money.ts`.
 
 **Post-v2 table UX (all presentation-only):** the waiting **lobby is merged into `GameTable`** (`Lobby.tsx` deleted; `RoomPage` always renders the table, which branches on `room.status` — felt-centre room-code banner, seat ready-badges, invite pill, host-only ⚙ settings drawer toggle in LOBBY). Animation layer: chips fly to **my seat pot** on "Đặt cược" (`table/chipFlight.ts` — the shared centre `Pot` renders only in Cào rùa; in Cào cái each bettor's stake shows as a per-seat `BetPot` (`table/Seat.tsx`), with the local player's pinned to the felt's bottom edge), dealt cards fly from the felt centre card-by-card then flip (`TableCard flyIn` + `DEAL_STEP_MS`/`dealSpanMs` in `table/seatGeometry.ts` — `ResultOverlay` waits these out), additive quick-bet chips, chat popup bubbles + unread badge when the drawer is closed (`useChatPopups.ts`), HUD balance ±delta flash (**held during REVEAL** via `useDisplayedBalance` in `GameTable.tsx`: the HUD shows `balance − result.deltas[me]` until `revealSettleMs` — the same instant `ResultOverlay` appears — so the number, the flash, and the result land together and the flash always equals the round's delta; likewise the seat point-badges, win/lose card dressing, and the `MyHandBar` readout are held until each hand's last card has flipped — `useDelayedTrue` in `app/hooks.ts` + `seatFlipDelayMs`/`FLIP_MS` in `seatGeometry.ts` — so nothing spoils a hand that is still face-down). These animations deliberately mask the ~1s `intent` round trip.
 
-> **Note on the Phase 3 section below:** it is kept as a build log. Where it describes P2P as "still the default", a `VITE_BACKEND` flag, or a `backend.ts` seam, that is **stale** — Supabase is the only backend now and those flags/files no longer exist. The "Code map", "Backend reality", and "Architecture invariants" sections above are the current source of truth.
+> **Note on the Phase 3 / Supabase sections below:** they are kept as a build log and are now **superseded by Cloudflare** (Workers + Durable Objects + D1). Anywhere they describe Supabase (Realtime, Edge Functions `intent`/`tick`, `room_secrets`, `pg_cron`, `commit_room`/OCC, the presence reporter, `build:functions`) as current, that is **historical** — none of it exists anymore. The "Code map", "Backend reality", and "Architecture invariants" sections above, plus `cloudflare/README.md`, are the current source of truth.
 
 Design specs (keep consistent with each other and with the code):
 - **`project_idea.md`** — pitch / overview / game primer.
@@ -21,27 +21,32 @@ Design specs (keep consistent with each other and with the code):
 ## Commands
 
 ```bash
-npm run dev        # Vite dev server at /beikao/
-npm run build      # tsc -b && vite build → dist/
-npm run test       # vitest run (single run)
-npm run typecheck  # tsc -b, no emit
-npm run lint       # eslint
+npm run dev          # Vite dev server (pure-UI iteration; no backend)
+npm run build        # tsc -b && vite build → dist/ (the SPA the Worker serves)
+npm run test         # vitest run (single run)
+npm run typecheck    # tsc -b, no emit
+npm run lint         # eslint
+npm run cf:dev       # Worker + Durable Objects + local D1, serving dist/ (the real backend)
+npm run cf:typecheck # typecheck the Worker (cloudflare/) — separate from tsc -b
+npm run cf:deploy    # wrangler deploy (usually done by Workers Builds, not by hand)
 npx vitest run src/features/cao/hand.test.ts   # a single test file
+# First time / after a schema change: npx wrangler d1 migrations apply beikao --local
 ```
 
 ## Code map
 
 - **`src/features/cao/`** — the pure, deterministic, I/O-free **game engine** (cards, deck/shuffle, hand evaluation, `compareHands`, settlement). Start here; it's the most-tested and highest-risk code. Has co-located `*.test.ts`.
-- **`src/features/room/`** — `authority.ts` (`GameAuthority`: state machine + intention validation, the only place that mutates authoritative state — runs **server-side** in the `intent` Edge Function, hydrated per request) and `types.ts` (`RoomState` and friends).
-- **`src/network/protocol/messages.ts`** — Zod schemas for client→server intentions + typed server→client messages. The same `intentionSchema` validates inbound messages in the Edge Function.
-- **`src/app/session/`** — `types.ts` (the `Session` interface) and `supabaseSession.ts` (the only implementation: Realtime in, `intent` Edge Function RPC out). The legacy PeerJS host/client sessions were removed.
-- **`src/network/supabase/`** — `client.ts` (the Supabase client), `auth.ts` (anonymous-auth identity), `rooms.ts` (discovery), `profile.ts` (durable wallet for the Home "Số dư" panel — balance + `claim_topup`/`claim_daily_gift` RPC wrappers; the leaderboard UI was removed — migration `0010` dropped its view, but `record_round_result`/`profiles` stay: they power durable balances). **Wallet top-up & daily gift** (`src/components/WalletPanel.tsx`, migration `0011`): "Nạp chip" opens a rickroll modal and credits +2000; the daily gift credits +1000 once per VN-time day, claim-only. Both are SQL RPCs keyed to `auth.uid()` (SECURITY DEFINER, execute revoked from anon) — the client never writes a balance, preserving the "clients send intentions, never results" invariant. Caveat: a top-up while seated in a live room is overwritten at that room's next settle (`record_round_result` writes the post-settle seat balance back), which is why the wallet taps live on the Home page only.
+- **`src/features/room/`** — `authority.ts` (`GameAuthority`: state machine + intention validation, the only place that mutates authoritative state — runs **server-side inside the `RoomDO`** (`cloudflare/src/roomDO.ts`), hydrated from DO storage) and `types.ts` (`RoomState` and friends).
+- **`src/network/protocol/messages.ts`** — Zod schemas for client→server intentions + typed server→client messages. The same `intentionSchema` validates inbound messages in the `RoomDO`.
+- **`src/network/cf/`** — `protocol.ts` (the WebSocket frame types shared by client + DO), `apiClient.ts` (same-origin fetch + the signed-token store), `auth.ts` (signed-token identity: `ensureIdentity`/`peekIdentity`), `rooms.ts` (discovery via `GET /api/rooms` + the `/api/lobby` change socket), `profile.ts` (durable wallet for the Home "Số dư" panel — `fetchWallet` + `claimTopup`/`claimDailyGift`). **Wallet top-up & daily gift** (`src/components/WalletPanel.tsx`): "Nạp chip" opens a rickroll modal and credits +2000; the daily gift credits +1000 once per VN-time day, claim-only. Both are Worker endpoints keyed to the **verified token uid** (`cloudflare/src/d1.ts`) — the client never writes a balance, preserving "clients send intentions, never results". Caveat: a top-up while seated in a live room is overwritten at that room's next settle, which is why the wallet taps live on the Home page only.
+- **`src/app/session/`** — `types.ts` (the `Session` interface) and `cloudflareSession.ts` (the only implementation: one WebSocket to the `RoomDO`, intentions out / `STATE` in). The legacy PeerJS and Supabase sessions were removed.
+- **`cloudflare/`** — the Worker + Durable Objects (`worker.ts` router, `roomDO.ts`, `lobbyDO.ts`, `auth.ts` token mint/verify, `d1.ts`, `stats.ts`, `migrations/`). The engine/authority/protocol are imported from `src/` **verbatim** (no bundle step — esbuild resolves `@/` via the root-tsconfig `paths`). See `cloudflare/README.md`.
 - **`src/app/store/store.ts`** — Zustand store; the bridge between React and the active session. UI never touches the session directly.
 - **`src/components/`, `src/pages/`** — UI. `RoomPage` always renders `GameTable`, which is the single screen for every `room.status`: in `LOBBY` (`room.round == null`) it renders the waiting state (felt banner, ready controls) and in `BETTING`/`REVEAL` the round UI — there is no separate `Lobby` component.
 
 ## What the project is
 
-A multiplayer **Bài cào** game (Vietnamese 3-card gambling card game) — **not Baccarat** (an earlier discarded direction). It is a static React SPA deployed to GitHub Pages, backed by **Supabase** (server-authoritative): clients read room state over **Realtime** and send intentions to **Edge Functions** that run the `GameAuthority`. The room creator is the **cái (dealer)** — a real participant, no longer the authority. (It originally used host-authoritative P2P over WebRTC/PeerJS; that layer was removed — see Phase 3 below.)
+A multiplayer **Bài cào** game (Vietnamese 3-card gambling card game) — **not Baccarat** (an earlier discarded direction). It is a React SPA served by a **Cloudflare Worker** that also runs the server-authoritative backend: clients open a **WebSocket** to the room's **Durable Object**, which runs the `GameAuthority` and pushes state back; cross-room data lives in **D1**. The room creator is the **cái (dealer)** — a real participant, not the authority. (It originally used host-authoritative P2P over WebRTC/PeerJS, then a Supabase backend; both were removed.)
 
 ## Domain rules that are easy to get wrong
 
@@ -55,22 +60,22 @@ These are the highest-risk logic and the source of most subtle bugs. Implement e
 
 ## Architecture invariants
 
-The authority runs on the **server** (the `intent` Edge Function, hydrating `GameAuthority` per request). Preserve these:
+The authority runs on the **server** — inside the room's **Durable Object** (`RoomDO`), which holds the warm `GameAuthority` in-isolate and persists `{state, secrets}` to DO storage on every commit. Preserve these:
 
 - **The cái (dealer) is a real participant, not the authority.** The server holds the deck/RNG, so the dealer has no information or rules advantage beyond the structural house edge of being the cái.
 - **Authority/engine code must never branch on `isHost` / `isCai`.** Every hand is dealt from the same shuffled deck in the same seat order; everyone's bets/accounting go through the same validation/settlement path.
-- **Clients send intentions, never results.** A client says "bet 100"; the server computes the outcome. Never trust a client-reported win/score/balance.
-- **Hidden hands are never sent to clients before the reveal step** — the authority keeps them out of `RoomState` until REVEAL, and the deck seed lives in `room_secrets` (never published, never anon-readable).
-- **The server owns time.** The betting deadline (`endsAt`) is server-controlled and closed by the `tick` cron (scheduled every 10 s by migration `0009_schedule_tick.sql` — without it the countdown expires and nothing happens); client timestamps are advisory only. The cái's client additionally fires `CLOSE_BETTING` the moment its countdown expires (failsafe in `GameTable`) — server-validated, so it grants no authority.
-- **No single point of failure.** State is durable in Postgres, so any client (incl. the cái) can drop and rejoin freely.
+- **Clients send intentions, never results.** A client says "bet 100"; the server computes the outcome. Never trust a client-reported win/score/balance. Wallet credits are keyed to the **verified token uid**, never a client-claimed id.
+- **Hidden hands are never sent to clients before the reveal step** — the authority keeps them out of `RoomState` until REVEAL, and the deck seed lives in the DO's **private storage** (never broadcast, no table to expose).
+- **The server owns time.** The betting deadline (`endsAt`) is server-controlled and closed by a **DO Alarm** set to `round.endsAt`; client timestamps are advisory only. (There is no longer a client `CLOSE_BETTING` failsafe — the alarm owns the deadline.)
+- **No single point of failure.** State is durable in DO storage, so any client (incl. the cái) can drop and rejoin freely; an evicted DO rehydrates losslessly.
 
 ## Backend reality (do not skip)
 
-All multiplayer is **Supabase** — no WebRTC/TURN, no signaling broker. Clients read room state via **Realtime** (Postgres changes on the room's row) and send intentions to **Edge Functions** (`intent`, `tick`) running with the service-role key. The Edge Functions reuse the app's engine + authority **verbatim** via `npm run build:functions` (esbuild → `supabase/functions/_shared/engine.bundle.js`). The app **requires** `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` to function. Full setup/deploy in `supabase/README.md`.
+All multiplayer is **one Cloudflare Worker** — no WebRTC/TURN, no signaling broker, no separate API origin. The browser opens a **WebSocket** to `/api/room/:code`, which the Worker routes to that room's **Durable Object**; the DO runs the authority and pushes `STATE` frames back. Cross-room durable data (profiles/balances + the room directory) is in **D1**. The Worker also serves the built SPA as **Static Assets** (same-origin, so no CORS and no `VITE_*` URL). The DO/Worker reuse the app's engine + authority **verbatim** by importing `src/` (no bundle step). Identity is a **Worker-minted signed token** (HMAC over `{uid}`, `AUTH_SIGNING_KEY` secret). Full setup/deploy in **`cloudflare/README.md`**; bindings in `wrangler.toml`.
 
 ## Toolchain & conventions
 
-Stack in use: **React 18 + Vite + TypeScript (strict, incl. `noUncheckedIndexedAccess`)**, Tailwind, **Zustand**, **`@supabase/supabase-js`** (Realtime + Auth + Edge Function RPC), **Zod** (validates all inbound messages, client- and server-side), **Web Crypto** (`getRandomValues` for the shuffle seed — never `Math.random`). Tests: **Vitest** with co-located `*.test.ts`. The `@/` alias maps to `src/`. GitHub Pages: Vite `base` is `/beikao/` (override with `BASE_PATH`) and routing is **hash-mode**, so refreshes/deep-links work without a `404.html`.
+Stack in use: **React 18 + Vite + TypeScript (strict, incl. `noUncheckedIndexedAccess`)**, Tailwind, **Zustand**, **Cloudflare Workers + Durable Objects + D1** (via `wrangler`; `@cloudflare/workers-types`), **Zod** (validates all inbound messages, client- and server-side), **Web Crypto** (`getRandomValues` for the shuffle seed — never `Math.random`). Tests: **Vitest** with co-located `*.test.ts`. The `@/` alias maps to `src/` (the root `tsconfig.json` `paths` exist so esbuild resolves it when wrangler bundles the Worker). Vite `base` is `/` (the Worker serves at the domain root); routing is **hash-mode** (history mode is an optional follow-up now that the Worker can SPA-fallback).
 
 When extending gameplay, change the engine + its tests first, then the authority, then the protocol/UI — and keep the GDD/TDD in sync.
 

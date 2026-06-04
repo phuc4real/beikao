@@ -81,3 +81,12 @@ export async function verifyToken(token: string, secret: string): Promise<TokenP
 export function newUid(): string {
   return crypto.randomUUID();
 }
+
+/**
+ * Resolve the HMAC signing key, with a dev-only fallback so `wrangler dev` works
+ * before AUTH_SIGNING_KEY is set. In production the secret MUST be configured
+ * (Worker → Settings → Variables); tokens signed with the fallback are insecure.
+ */
+export function signingKey(key: string | undefined): string {
+  return key ?? 'dev-insecure-signing-key';
+}

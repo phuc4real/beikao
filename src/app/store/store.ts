@@ -30,6 +30,15 @@ interface AppState {
    * duration instead of looking frozen. Set true on send, false on response.
    */
   pending: Record<string, boolean>;
+  /**
+   * My own bet shown optimistically for the ~1s the PLACE_BET/CLEAR_BET round
+   * trip is in flight, so the chips that fly to my pot land on a real number
+   * instead of empty felt. Display-only: the server stays authoritative — this
+   * is reconciled away the instant the response state arrives (see `placeBet`).
+   * `amount: 0` optimistically clears the pot. Scoped to a round so a stale
+   * value from a prior round never leaks (guarded in `selectMyBet`).
+   */
+  optimisticBet: { round: number; amount: number } | null;
 
   createRoom: (name: string, config?: Partial<RoomConfig>, isPublic?: boolean) => void;
   joinRoom: (code: string, name: string, asSpectator?: boolean) => void;
@@ -118,6 +127,7 @@ export const useGame = create<AppState>((set, get) => {
     fatal: null,
     notice: null,
     pending: {},
+    optimisticBet: null,
 
     createRoom: async (name, config, isPublic = true) => {
       session?.leave();
@@ -172,7 +182,7 @@ export const useGame = create<AppState>((set, get) => {
       session?.leave();
       session = null;
       clearSession();
-      set({ room: null, me: null, reactions: [], status: 'idle', fatal: null, notice: null, pending: {} });
+      set({ room: null, me: null, reactions: [], status: 'idle', fatal: null, notice: null, pending: {}, optimisticBet: null });
     },
 
     updateConfig: (config) => void command('config', { type: 'UPDATE_CONFIG', config }),
@@ -181,8 +191,22 @@ export const useGame = create<AppState>((set, get) => {
     // One shared pending key: the two directions are mutually exclusive.
     becomeSpectator: () => void command('seatswap', { type: 'BECOME_SPECTATOR' }),
     becomePlayer: () => void command('seatswap', { type: 'BECOME_PLAYER' }),
-    placeBet: (amount) => void command('bet', { type: 'PLACE_BET', amount }),
-    clearBet: () => void command('bet', { type: 'CLEAR_BET' }),
+    // Optimistic: paint my stake at my seat immediately, then let the server's
+    // response state win. After `await` the authoritative state is already
+    // applied (via onState), so dropping the optimistic value never flickers —
+    // an accepted bet matches it, a rejected one reverts to no pot + a notice.
+    placeBet: async (amount) => {
+      const round = get().room?.round?.roundNumber;
+      if (round != null) set({ optimisticBet: { round, amount } });
+      await command('bet', { type: 'PLACE_BET', amount });
+      set({ optimisticBet: null });
+    },
+    clearBet: async () => {
+      const round = get().room?.round?.roundNumber;
+      if (round != null) set({ optimisticBet: { round, amount: 0 } });
+      await command('bet', { type: 'CLEAR_BET' });
+      set({ optimisticBet: null });
+    },
     startRound: () => void command('start', { type: 'START_ROUND' }),
     closeBetting: () => void command('close', { type: 'CLOSE_BETTING' }),
     nextRound: () => void command('next', { type: 'NEXT_ROUND' }),
@@ -203,6 +227,22 @@ export const useGame = create<AppState>((set, get) => {
 export function selectMe(state: AppState) {
   if (!state.room || !state.me) return undefined;
   return state.room.players.find((p) => p.id === state.me!.playerId);
+}
+
+/**
+ * My current stake to render — the optimistic value while a bet round trip is
+ * in flight (scoped to this round, BETTING only), otherwise the authoritative
+ * `round.bets[me]`. Returns undefined for "no pot" (incl. an optimistic clear).
+ */
+export function selectMyBet(state: AppState): number | undefined {
+  const me = selectMe(state);
+  const round = state.room?.round;
+  if (!me || !round) return undefined;
+  const opt = state.optimisticBet;
+  if (opt && state.room!.status === 'BETTING' && opt.round === round.roundNumber) {
+    return opt.amount > 0 ? opt.amount : undefined;
+  }
+  return round.bets[me.id];
 }
 
 /** True if I'm watching as a spectator (not a seated player). */

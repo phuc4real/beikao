@@ -45,6 +45,10 @@ export class SupabaseSession implements Session {
   private channel: RealtimeChannel | null = null;
   private disposed = false;
   private connected = false;
+  /** True once the create/JOIN handshake has run — distinguishes a first
+   *  connect (failure is fatal) from a re-subscribe after a dropped socket
+   *  (recoverable: we just refresh state and clear the reconnecting banner). */
+  private handshaken = false;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   private syncTimer: ReturnType<typeof setTimeout> | null = null;
@@ -174,10 +178,22 @@ export class SupabaseSession implements Session {
         if (this.disposed) return;
         if (status === 'SUBSCRIBED') {
           void this.channel?.track({ id: this.opts.playerId });
-          void this.handshake();
-          this.startHeartbeat();
+          if (!this.handshaken) {
+            this.handshaken = true;
+            void this.handshake();
+            this.startHeartbeat();
+          } else {
+            // Re-subscribed after a dropped socket: Realtime only streams future
+            // changes, so pull the current room state back (a JOIN re-seats us by
+            // playerId) and clear the "reconnecting" banner.
+            void this.reconnect();
+          }
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          this.hooks.onStatus('error', 'Lỗi kết nối realtime');
+          // A drop mid-session is recoverable — supabase-js auto-rejoins the
+          // channel and fires SUBSCRIBED again. Surface it as a soft banner
+          // instead of ejecting the player from a room they hold chips in. A
+          // failure on the *first* connect is left to the 15s connect timeout.
+          if (this.connected) this.hooks.onStatus('reconnecting', 'Mất kết nối — đang kết nối lại…');
         }
       });
 
@@ -209,15 +225,36 @@ export class SupabaseSession implements Session {
     this.applyResponse(res);
   }
 
+  /**
+   * Recover after the Realtime socket dropped and re-subscribed. A JOIN is
+   * idempotent (the server matches our existing seat by playerId) and echoes
+   * the current room state — so this both re-seats us and refreshes the state
+   * Realtime missed while we were away, then clears the reconnecting banner.
+   */
+  private async reconnect(): Promise<void> {
+    const res = await this.invoke(
+      { op: 'intent', intention: { type: 'JOIN', name: this.opts.name, spectator: this.opts.spectator } },
+      { silent: true },
+    );
+    if (this.disposed) return;
+    if (res && res.ok !== false) this.hooks.onStatus('connected');
+    else this.hooks.onStatus('reconnecting', 'Mất kết nối — đang kết nối lại…');
+  }
+
   /** Invoke the `intent` Edge Function with the shared room/player envelope. */
-  private async invoke(body: Record<string, unknown>): Promise<IntentResponse | null> {
+  private async invoke(
+    body: Record<string, unknown>,
+    opts: { silent?: boolean } = {},
+  ): Promise<IntentResponse | null> {
     const supabase = getSupabase();
     if (!supabase) return null;
     const { data, error } = await supabase.functions.invoke<IntentResponse>('intent', {
       body: { roomCode: this.opts.roomId, playerId: this.opts.playerId, name: this.opts.name, ...body },
     });
     if (error) {
-      if (!this.disposed) this.hooks.onStatus('error', 'Lỗi máy chủ');
+      // `silent` callers (reconnect refresh) handle failure themselves rather
+      // than escalating to a fatal 'error' that would eject the player.
+      if (!this.disposed && !opts.silent) this.hooks.onStatus('error', 'Lỗi máy chủ');
       return null;
     }
     if (data && !this.disposed) this.applyResponse(data);

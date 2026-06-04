@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { selectMe, useGame } from '@/app/store/store';
+import { selectMe, selectMyBet, useGame } from '@/app/store/store';
 import { Button, GoldText, Panel } from '@/components/ui';
 import { TimerRing } from './TimerRing';
 import { flyChipsToPot } from './chipFlight';
@@ -20,7 +20,8 @@ export function BettingBar() {
   const chipStyle = usePrefs((s) => s.chipStyle);
   const round = room.round!;
   const { minBet, maxBet, bettingSeconds } = room.config;
-  const currentBet = round.bets[me.id];
+  // Optimistic so the label flips to "Đổi cược" the instant I tap, not 1s later.
+  const currentBet = useGame(selectMyBet);
 
   const ceiling = Math.min(maxBet, me.balance);
   const [amount, setAmount] = useState(Math.min(Math.max(minBet, currentBet ?? minBet), ceiling));

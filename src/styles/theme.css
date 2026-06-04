@@ -402,6 +402,9 @@
   border-radius: 30px;
   border: 1px solid rgba(217, 178, 94, 0.3);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  /* Plays once when a seat mounts — a player joining the felt eases in rather
+     than popping into existence (the node is keyed by player id). */
+  animation: seatIn 0.42s cubic-bezier(0.2, 0.8, 0.25, 1) both;
 }
 
 /* ============================================================
@@ -516,6 +519,43 @@
   color: var(--gold-light);
   opacity: 0.85;
   pointer-events: none;
+}
+
+/* Brief "betting locked" flash at the top of the felt as the deal begins —
+   gives the BETTING→REVEAL transition a beat and overlaps the dealing cards. */
+.closed-banner {
+  position: absolute;
+  top: 13%;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  text-align: center;
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--gold-light);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+/* Felt-shaped placeholder shown while the room state is loading in. */
+.table-skeleton {
+  width: min(70vw, 420px);
+  height: min(42vw, 250px);
+  border-radius: 50%;
+  border: 2px solid var(--gold-line);
+  background: linear-gradient(
+    110deg,
+    rgba(20, 60, 40, 0.5) 20%,
+    rgba(40, 95, 62, 0.7) 40%,
+    rgba(20, 60, 40, 0.5) 60%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s linear infinite;
+  box-shadow:
+    inset 0 0 60px rgba(0, 0, 0, 0.5),
+    0 20px 50px rgba(0, 0, 0, 0.5);
 }
 
 /* lobby invite pill under the felt: copies the share link */
@@ -1003,6 +1043,63 @@
   100% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+/* PhaseSwap crossfade: incoming layer fades up, outgoing fades out over it
+   (absolutely positioned) so room.status transitions glide. Both layers stack
+   their controls vertically, matching the bottom-bar flex layout. */
+.phase-swap {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.phase-swap-enter,
+.phase-swap-leave {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.phase-swap-enter {
+  animation: phaseEnter 0.32s ease both;
+}
+.phase-swap-leave {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: phaseLeave 0.26s ease both;
+}
+@keyframes phaseEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes phaseLeave {
+  from {
+    opacity: 0.8;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes seatIn {
+  from {
+    opacity: 0;
+    transform: scale(0.86) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 @keyframes glowPulse {

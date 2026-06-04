@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { selectIsSpectator, selectMe, useGame } from '@/app/store/store';
+import { selectIsSpectator, selectMe, selectMyBet, useGame } from '@/app/store/store';
 import { Button, Coin, GoldText } from '@/components/ui';
 import { Chat, ChatPopups } from '@/components/Chat';
 import { useChatPopups } from '@/components/useChatPopups';
@@ -9,6 +9,7 @@ import { ReactionBar, FloatingReactions } from '@/components/Reactions';
 import { HistoryPanel } from '@/components/History';
 import { AppearancePanel } from '@/components/AppearancePanel';
 import { ResultOverlay } from '@/components/ResultOverlay';
+import { PhaseSwap } from '@/components/PhaseSwap';
 import { SettingsModal } from '@/components/SettingsModal';
 import { Seat, BetPot } from '@/components/table/Seat';
 import { BettingBar, CaiBar } from '@/components/table/BettingBar';
@@ -68,6 +69,8 @@ export function GameTable() {
   // HUD balance: held at the pre-settle value during the reveal choreography so
   // the number (and its ±flash) lands together with the result overlay.
   const displayBalance = useDisplayedBalance(me, room);
+  // My stake, shown optimistically the instant I bet (masks the ~1s round trip).
+  const myBet = useGame(selectMyBet);
 
   const goHome = () => {
     leave();
@@ -178,10 +181,15 @@ export function GameTable() {
                 {isRua && <Pot round={round} />}
                 {betting && (
                   <div className="felt-substatus">
-                    {room.players.filter((p) => !p.isCai && (round.bets[p.id] ?? 0) > 0).length}/
-                    {room.players.filter((p) => !p.isCai).length} con đã cược
+                    {
+                      room.players.filter(
+                        (p) => !p.isCai && (p.id === me?.id ? (myBet ?? 0) : (round.bets[p.id] ?? 0)) > 0,
+                      ).length
+                    }
+                    /{room.players.filter((p) => !p.isCai).length} con đã cược
                   </div>
                 )}
+                {reveal && <ClosedBanner roundNumber={round.roundNumber} />}
               </>
             )}
           </div>
@@ -201,10 +209,10 @@ export function GameTable() {
             );
           })}
           {/* My own stake "sits" with me at the bottom edge of the felt. */}
-          {round && me && (round.bets[me.id] ?? 0) > 0 && (
+          {round && me && (myBet ?? 0) > 0 && (
             <div className="my-pot">
               <BetPot
-                amount={round.bets[me.id]!}
+                amount={myBet!}
                 colorIdx={Math.max(0, room.players.findIndex((p) => p.id === me.id))}
               />
             </div>
@@ -212,36 +220,38 @@ export function GameTable() {
         </div>
       </div>
 
-      {/* Bottom: lobby controls, betting controls, or my hand — cross-fades on
-          status changes (keyed) while the felt above stays put. */}
-      <div key={room.status} className="z-10 flex animate-fade-up flex-col items-center gap-3 px-4 pb-4">
-        {lobby && openSeats > 0 && (
-          <button className="invite-pill" onClick={copyLink}>
-            {copied ? 'Đã sao chép link mời ✓' : `＋ ${openSeats} chỗ trống — mời bạn bè`}
-          </button>
-        )}
+      {/* Bottom: lobby controls, betting controls, or my hand — crossfades
+          (PhaseSwap) on status changes while the felt above stays put. */}
+      <div className="z-10 flex flex-col items-center gap-3 px-4 pb-4">
+        <PhaseSwap token={room.status} className="w-full">
+          {lobby && openSeats > 0 && (
+            <button className="invite-pill" onClick={copyLink}>
+              {copied ? 'Đã sao chép link mời ✓' : `＋ ${openSeats} chỗ trống — mời bạn bè`}
+            </button>
+          )}
 
-        {/* Cào rùa: the cái sets the shared ante right at the table (no settings drawer). */}
-        {isRua && isHost && (lobby || !round || reveal) && <AnteControl />}
+          {/* Cào rùa: the cái sets the shared ante right at the table (no settings drawer). */}
+          {isRua && isHost && (lobby || !round || reveal) && <AnteControl />}
 
-        {lobby || !round ? (
-          <LobbyControls canStart={canStart} />
-        ) : betting ? (
-          me ? (
-            // Cào rùa cons get the info bar too: their ante is auto-placed at
-            // round start (the authority rejects PLACE_BET in this mode).
-            me.isCai || isRua ? (
-              <CaiBar />
-            ) : (
-              <BettingBar />
-            )
-          ) : null
-        ) : (
-          <MyHandBar round={round} />
-        )}
+          {lobby || !round ? (
+            <LobbyControls canStart={canStart} />
+          ) : betting ? (
+            me ? (
+              // Cào rùa cons get the info bar too: their ante is auto-placed at
+              // round start (the authority rejects PLACE_BET in this mode).
+              me.isCai || isRua ? (
+                <CaiBar />
+              ) : (
+                <BettingBar />
+              )
+            ) : null
+          ) : (
+            <MyHandBar round={round} />
+          )}
 
-        {reveal && isHost && <RevealControls />}
-        {reveal && !isHost && <SeatSwap />}
+          {reveal && isHost && <RevealControls />}
+          {reveal && !isHost && <SeatSwap />}
+        </PhaseSwap>
 
         <ReactionBar />
       </div>
@@ -449,6 +459,26 @@ function DrawerToggle({
         </span>
       )}
     </button>
+  );
+}
+
+/**
+ * Transient "🔒 Đã chốt cược" flash at the top of the felt the moment betting
+ * closes, overlapping the dealing cards so the BETTING→REVEAL cut isn't abrupt.
+ * Keyed on round number so it replays each round, then hides itself.
+ */
+function ClosedBanner({ roundNumber }: { roundNumber: number }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    setShow(true);
+    const t = setTimeout(() => setShow(false), 1400);
+    return () => clearTimeout(t);
+  }, [roundNumber]);
+  if (!show) return null;
+  return (
+    <div className="closed-banner animate-pop" aria-hidden>
+      🔒 Đã chốt cược
+    </div>
   );
 }
 

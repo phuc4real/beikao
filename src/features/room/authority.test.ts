@@ -159,6 +159,121 @@ describe('GameAuthority — Cào cái round', () => {
   });
 });
 
+describe('GameAuthority — permanent leave & host migration', () => {
+  it('frees the seat and promotes a new cái when the host leaves', () => {
+    const { authority, getState } = makeAuthority();
+    active = authority;
+
+    authority.join('con', 'Bình');
+    authority.leave('host');
+
+    const s = getState();
+    expect(s.players.some((p) => p.id === 'host')).toBe(false);
+    expect(s.caiId).toBe('con');
+    expect(s.hostId).toBe('con');
+    const heir = s.players.find((p) => p.id === 'con')!;
+    expect(heir.isCai).toBe(true);
+    expect(heir.ready).toBe(true); // the cái is always in
+  });
+
+  it('prefers a connected player as the new cái', () => {
+    const { authority, getState } = makeAuthority();
+    active = authority;
+
+    authority.join('con1', 'Bình');
+    authority.join('con2', 'Chi');
+    authority.disconnect('con1');
+    authority.leave('host');
+
+    expect(getState().caiId).toBe('con2');
+  });
+
+  it('aborts a live betting round when the cái leaves (no chips moved)', async () => {
+    const { authority, getState } = makeAuthority();
+    active = authority;
+
+    authority.join('con', 'Bình');
+    authority.submit('con', { type: 'SET_READY', ready: true });
+    authority.submit('host', { type: 'START_ROUND' });
+    await waitFor(() => getState().status === 'BETTING');
+    authority.submit('con', { type: 'PLACE_BET', amount: 100 });
+
+    authority.leave('host');
+
+    const s = getState();
+    expect(s.status).toBe('LOBBY'); // round aborted, not settled
+    expect(s.round).toBeNull();
+    expect(s.caiId).toBe('con');
+    expect(s.players.find((p) => p.id === 'con')!.balance).toBe(1000); // bet refunded by never settling
+  });
+
+  it('a leaving con frees the seat and drops their live stake, keeping the cái', async () => {
+    const { authority, getState } = makeAuthority();
+    active = authority;
+
+    authority.join('con1', 'Bình');
+    authority.join('con2', 'Chi');
+    authority.submit('con1', { type: 'SET_READY', ready: true });
+    authority.submit('con2', { type: 'SET_READY', ready: true });
+    authority.submit('host', { type: 'START_ROUND' });
+    await waitFor(() => getState().status === 'BETTING');
+    authority.submit('con1', { type: 'PLACE_BET', amount: 100 });
+
+    authority.leave('con1');
+
+    const s = getState();
+    expect(s.status).toBe('BETTING'); // the round survives a con leaving
+    expect(s.players.some((p) => p.id === 'con1')).toBe(false);
+    expect(s.round?.bets['con1']).toBeUndefined();
+    expect(s.caiId).toBe('host');
+  });
+
+  it('empties the room when the last player leaves (server then deletes it)', () => {
+    const { authority, getState } = makeAuthority();
+    active = authority;
+
+    authority.join('watcher', 'Xem', true);
+    authority.leave('host');
+
+    expect(getState().players).toHaveLength(0);
+  });
+
+  it('removes a leaving spectator', () => {
+    const { authority, getState } = makeAuthority();
+    active = authority;
+
+    authority.join('watcher', 'Xem', true);
+    authority.leave('watcher');
+
+    expect(getState().spectators).toHaveLength(0);
+  });
+});
+
+describe('GameAuthority — config updates', () => {
+  it('lets the cái retune the stake at REVEAL (table ante control), never mid-BETTING', async () => {
+    const { authority, getState } = makeAuthority();
+    active = authority;
+
+    authority.join('con', 'Bình');
+    authority.submit('con', { type: 'SET_READY', ready: true });
+    authority.submit('host', { type: 'START_ROUND' });
+    await waitFor(() => getState().status === 'BETTING');
+
+    authority.submit('host', { type: 'UPDATE_CONFIG', config: { minBet: 50 } });
+    expect(getState().config.minBet).toBe(10); // locked during a live round
+
+    authority.submit('con', { type: 'PLACE_BET', amount: 100 });
+    authority.submit('host', { type: 'CLOSE_BETTING' });
+    expect(getState().status).toBe('REVEAL');
+
+    authority.submit('host', { type: 'UPDATE_CONFIG', config: { minBet: 50 } });
+    expect(getState().config.minBet).toBe(50);
+
+    authority.submit('con', { type: 'UPDATE_CONFIG', config: { minBet: 99 } });
+    expect(getState().config.minBet).toBe(50); // only the cái may
+  });
+});
+
 describe('GameAuthority — seat ↔ spectator switching', () => {
   it('lets a con step back to watch and a spectator take a seat (lobby)', () => {
     const { authority, getState, errors } = makeAuthority();

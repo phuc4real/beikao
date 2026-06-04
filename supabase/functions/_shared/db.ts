@@ -161,6 +161,9 @@ export async function writeRoomOnly(code: string, state: RoomState, currentVersi
       version: currentVersion + 1,
       status: state.status,
       mode: state.config.mode,
+      // Host migration happens on the leave path (which writes through here),
+      // so keep the denormalized host/cái columns in step with the state.
+      host_id: state.hostId,
       cai_id: state.caiId,
       player_count: connected,
       max_players: state.config.maxPlayers,

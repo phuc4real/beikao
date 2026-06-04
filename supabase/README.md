@@ -14,7 +14,9 @@ supabase/
 │   ├── 0004_durable_balances.sql     # profiles.balance + get_or_create_profile (3d)
 │   ├── 0005_security_invoker_views.sql # views run as SECURITY INVOKER (advisor fix)
 │   ├── 0006_indexes.sql              # rooms.updated_at + profiles leaderboard index
-│   └── 0007_commit_room.sql          # atomic state+secrets write (1 round trip, OCC-gated)
+│   ├── 0007_commit_room.sql          # atomic state+secrets write (1 round trip, OCC-gated)
+│   ├── 0008_intent_rpcs.sql          # load_room_state RPC (state+secrets+balance in 1 trip)
+│   └── 0009_schedule_tick.sql        # pg_cron + pg_net: invokes `tick` every 10 s
 └── functions/
     ├── _shared/cors.ts
     ├── _shared/types.ts         # minimal Deno-side types
@@ -84,19 +86,11 @@ Then set `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (GitHub Actions secrets)
 
 ### Schedule the betting-deadline tick
 
-`tick` must run ~1×/second. Easiest is pg_cron + pg_net (SQL editor), calling the deployed function:
+**Done by migration `0009_schedule_tick.sql`** (applied with `supabase db push`): pg_cron + pg_net invoke the deployed `tick` function every **10 seconds**. Without this schedule a betting countdown hits zero and nothing happens — the round stays stuck in BETTING.
 
-```sql
-select cron.schedule(
-  'beikao-tick', '1 seconds',
-  $$ select net.http_post(
-       url := 'https://<ref>.functions.supabase.co/tick',
-       headers := jsonb_build_object('Authorization', 'Bearer <anon-or-service-key>')
-     ); $$
-);
-```
+Why 10 s is enough: the cái's client carries a **failsafe** (see `GameTable`) that fires the same `CLOSE_BETTING` intention the moment its countdown expires, so the normal close is instant; the cron is the backstop for a disconnected cái and the heartbeat for the empty/dead-room reaper. 10 s also keeps invocations well inside the free tier (~260K/month vs the 500K cap — a 1 s cadence would blow past it).
 
-(For local dev, you can poke `tick` by hand: `curl -X POST http://127.0.0.1:54321/functions/v1/tick`.)
+If you fork/relink the project, edit the function URL inside `0009_schedule_tick.sql` (`tick` runs with `verify_jwt = false`, so no key is needed). Re-running `cron.schedule` with the same job name replaces the job. For local dev, poke `tick` by hand: `curl -X POST http://127.0.0.1:54321/functions/v1/tick`.
 
 ## How the engine is shared (no fork)
 
@@ -117,7 +111,7 @@ unchanged on Deno.
 
 ## Not yet done (next steps)
 
-- **3b finish:** verify the Edge Functions end-to-end on `supabase start` (Deno import resolution, RLS, realtime payload shape).
+- **3b finish:** ✅ verified end-to-end against the **hosted** stack (create → join → ready → start → bet → cron-tick deadline close → settle → leave/delete all exercised live). Realtime payload shape still only exercised via the app itself.
 - **3c:** ✅ presence-based disconnect — clients track Realtime **Presence**; a deterministic "reporter" (lowest present id) pushes the present set to `sync_presence`, which reconciles every seat's `connected` flag; the reporter heartbeats so the reaper can sweep dead rooms.
 - **3d:** ✅ active-room-discovery browser + public/private toggle; ✅ durable **stats + leaderboard**; ✅ **anonymous Supabase Auth** identity (persisted, upgradeable); ✅ **durable cross-room balances** (chips follow the player; new players granted the room's starting balance). Hardening left: derive the player id from the verified JWT server-side instead of trusting the request body.
 - **3e:** ✅ Supabase is the **only** backend — the PeerJS/TURN P2P transport (and the `VITE_BACKEND` flag) has been removed entirely.

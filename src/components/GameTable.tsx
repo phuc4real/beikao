@@ -10,15 +10,16 @@ import { HistoryPanel } from '@/components/History';
 import { AppearancePanel } from '@/components/AppearancePanel';
 import { ResultOverlay } from '@/components/ResultOverlay';
 import { SettingsModal } from '@/components/SettingsModal';
-import { Seat } from '@/components/table/Seat';
+import { Seat, BetPot } from '@/components/table/Seat';
 import { BettingBar, CaiBar } from '@/components/table/BettingBar';
+import { AnteControl } from '@/components/table/AnteControl';
 import { MyHandBar } from '@/components/table/MyHandBar';
 import { BeikaoEmblem } from '@/components/table/BeikaoEmblem';
-import { seatAngles, seatXY } from '@/components/table/seatGeometry';
+import { seatAngles, seatXY, revealSettleMs } from '@/components/table/seatGeometry';
 import { randomSeedHex } from '@/utils/crypto';
 import { formatChips } from '@/utils/money';
 import { avatarColor } from '@/utils/colors';
-import { MIN_PLAYERS, type RoundView } from '@/features/room/types';
+import { MIN_PLAYERS, type PlayerView, type RoomState, type RoundView } from '@/features/room/types';
 
 export function GameTable() {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ export function GameTable() {
   const me = useGame(selectMe);
   const isHost = useGame((s) => s.isHost());
   const sendSeed = useGame((s) => s.sendSeed);
+  const closeBetting = useGame((s) => s.closeBetting);
   const leave = useGame((s) => s.leave);
   const round = room.round;
 
@@ -40,6 +42,18 @@ export function GameTable() {
     }
   }, [canSeed, round, sendSeed]);
 
+  // Deadline failsafe: the scheduled server `tick` owns the betting clock, but
+  // if the cron is missing or lagging, the cái's client fires the same
+  // CLOSE_BETTING the "Chốt cược" button sends once the countdown runs out
+  // (+grace for tick/clock skew). The server still validates everything, and a
+  // round that already advanced makes this a harmless no-op.
+  const endsAt = room.status === 'BETTING' ? (round?.endsAt ?? null) : null;
+  useEffect(() => {
+    if (!isHost || endsAt == null) return;
+    const t = setTimeout(() => closeBetting(), Math.max(0, endsAt - Date.now()) + 1500);
+    return () => clearTimeout(t);
+  }, [isHost, endsAt, closeBetting]);
+
   const [drawer, setDrawer] = useState<'chat' | 'history' | 'looks' | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -49,6 +63,11 @@ export function GameTable() {
   const lobby = room.status === 'LOBBY';
   const betting = room.status === 'BETTING';
   const reveal = room.status === 'REVEAL';
+  const isRua = room.config.mode === 'CAO_RUA';
+
+  // HUD balance: held at the pre-settle value during the reveal choreography so
+  // the number (and its ±flash) lands together with the result overlay.
+  const displayBalance = useDisplayedBalance(me, room);
 
   const goHome = () => {
     leave();
@@ -105,8 +124,14 @@ export function GameTable() {
                 {room.id} · Ván {round.roundNumber}
               </GoldText>
               <span className="text-[10px] tracking-wide text-pearl/55">
-                Cái: 👑 {room.players.find((p) => p.isCai)?.name ?? ''} · Cược {formatChips(room.config.minBet)}–
-                {formatChips(room.config.maxBet)}
+                Cái: 👑 {room.players.find((p) => p.isCai)?.name ?? ''} ·{' '}
+                {isRua ? (
+                  <>Cược {formatChips(room.config.minBet)}/người</>
+                ) : (
+                  <>
+                    Cược {formatChips(room.config.minBet)}–{formatChips(room.config.maxBet)}
+                  </>
+                )}
               </span>
             </>
           )}
@@ -114,8 +139,8 @@ export function GameTable() {
         {me ? (
           <div className="panel relative flex items-center gap-2 px-3.5 py-2">
             <Coin small />
-            <GoldText className="font-display text-base font-extrabold">{formatChips(me.balance)}</GoldText>
-            <BalanceFlash balance={me.balance} />
+            <GoldText className="font-display text-base font-extrabold">{formatChips(displayBalance)}</GoldText>
+            <BalanceFlash balance={displayBalance} />
           </div>
         ) : (
           <span className="pill rounded-full px-3 py-1.5 text-sm text-gold-light">👁 Đang xem</span>
@@ -142,10 +167,15 @@ export function GameTable() {
                 <div className="felt-banner-count">
                   {readyCons}/{Math.max(0, connected.length - 1)} con sẵn sàng
                 </div>
+                {isRua && (
+                  <div className="felt-banner-count">Cược {formatChips(room.config.minBet)}/người</div>
+                )}
               </div>
             ) : (
               <>
-                <Pot round={round} />
+                {/* Only Cào rùa has a shared pot; in Cào cái every stake sits
+                    at its bettor's seat (the cái banks each con separately). */}
+                {isRua && <Pot round={round} />}
                 {betting && (
                   <div className="felt-substatus">
                     {room.players.filter((p) => !p.isCai && (round.bets[p.id] ?? 0) > 0).length}/
@@ -170,6 +200,15 @@ export function GameTable() {
               />
             );
           })}
+          {/* My own stake "sits" with me at the bottom edge of the felt. */}
+          {round && me && (round.bets[me.id] ?? 0) > 0 && (
+            <div className="my-pot">
+              <BetPot
+                amount={round.bets[me.id]!}
+                colorIdx={Math.max(0, room.players.findIndex((p) => p.id === me.id))}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -182,11 +221,16 @@ export function GameTable() {
           </button>
         )}
 
+        {/* Cào rùa: the cái sets the shared ante right at the table (no settings drawer). */}
+        {isRua && isHost && (lobby || !round || reveal) && <AnteControl />}
+
         {lobby || !round ? (
           <LobbyControls canStart={canStart} />
         ) : betting ? (
           me ? (
-            me.isCai ? (
+            // Cào rùa cons get the info bar too: their ante is auto-placed at
+            // round start (the authority rejects PLACE_BET in this mode).
+            me.isCai || isRua ? (
               <CaiBar />
             ) : (
               <BettingBar />
@@ -327,6 +371,31 @@ function SeatSwap() {
     );
   }
   return null;
+}
+
+/**
+ * The HUD balance to render. The authoritative `me.balance` already includes
+ * the round's settlement the moment the REVEAL state arrives — long before the
+ * cards finish flipping — so during REVEAL we hold the pre-settle value
+ * (balance − my delta) until the reveal choreography ends, then release it.
+ * The new number and its ±flash thus land together with the ResultOverlay, and
+ * the flash equals exactly the round's `result.deltas` entry.
+ */
+function useDisplayedBalance(me: PlayerView | undefined, room: RoomState): number {
+  const result = room.status === 'REVEAL' ? room.round?.result : undefined;
+  const roundNumber = result?.roundNumber ?? null;
+  const playerCount = room.players.length;
+  const [settledRound, setSettledRound] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (roundNumber == null) return;
+    const t = setTimeout(() => setSettledRound(roundNumber), revealSettleMs(playerCount));
+    return () => clearTimeout(t);
+  }, [roundNumber, playerCount]);
+
+  if (!me) return 0; // spectator — the HUD balance isn't rendered
+  if (result && settledRound !== roundNumber) return me.balance - (result.deltas[me.id] ?? 0);
+  return me.balance;
 }
 
 /** Transient +N/−N flash over the HUD balance when it changes (settle, rebuy). */

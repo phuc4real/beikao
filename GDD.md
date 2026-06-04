@@ -289,7 +289,7 @@ Accessibility: color-blind-safe outcome indicators (icons + text + suit symbols,
 | Room full | "Phòng đã đầy / Room is full" + offer to spectate (Phase 2). |
 | Join mid-round | Seated immediately, "You'll join the next round." |
 | Disconnect mid-round | Reconnect within grace period and resume; bets placed before the window closed still resolve. |
-| **Cái (host) leaves** | "Cái đã rời phòng — phòng đóng / Host left — room closed" (MVP), or seamless host migration + new cái (Phase 2). |
+| **Cái (host) leaves** | Host migration (built): the next connected player becomes the new host + cái (announced in chat); a betting round in flight is cancelled back to the lobby (no chips have moved). The room only closes when the last player leaves. A reload/tab-close is just a disconnect — the cái can rejoin their seat. |
 | Out of chips | Rebuy prompt (if enabled) or move to spectate. |
 | Bet over balance / limits | Inline error, bet not accepted. |
 | **Tie on score** | Resolved by suit rank (♦>♥>♣>♠); UI shows the deciding card. |

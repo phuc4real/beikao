@@ -411,6 +411,44 @@ var GameAuthority = class {
     });
     this.commit();
   }
+  /**
+   * Permanent leave (the in-app "Rời phòng", vs. disconnect() which keeps the
+   * seat for a reload-reconnect): free the seat entirely. If the leaver was the
+   * cái, the next connected player inherits host + cái so the room stays open
+   * until the last person walks out (host migration). The server deletes the
+   * room when `players` empties.
+   */
+  leave(playerId) {
+    const p = this.findPlayer(playerId);
+    if (!p) {
+      if (this.state.spectators.some((s) => s.id === playerId)) {
+        this.state.spectators = this.state.spectators.filter((s) => s.id !== playerId);
+        this.commit();
+      }
+      return;
+    }
+    this.state.players = this.state.players.filter((q) => q.id !== playerId);
+    if (this.state.round?.bets) delete this.state.round.bets[playerId];
+    if (p.isCai) this.promoteNewCai();
+    this.commit();
+  }
+  /** The cái left for good — hand the room to the next player. */
+  promoteNewCai() {
+    const heir = this.state.players.find((q) => q.connected) ?? this.state.players[0];
+    if (!heir) return;
+    this.state.caiId = heir.id;
+    this.state.hostId = heir.id;
+    heir.isCai = true;
+    heir.ready = true;
+    if (this.state.status === "BETTING") {
+      this.clearTimer();
+      this.pendingSeed = null;
+      this.pendingPlayerSeeds = {};
+      this.state.status = "LOBBY";
+      this.state.round = null;
+    }
+    this.addChat("system", "H\u1EC7 th\u1ED1ng", `\u{1F451} ${heir.name} l\xE0 c\xE1i m\u1EDBi`);
+  }
   /** A connection dropped; keep player seats, drop spectators. */
   disconnect(playerId) {
     const p = this.findPlayer(playerId);
@@ -496,7 +534,7 @@ var GameAuthority = class {
         if (this.state.status === "BETTING" && !p.isCai) this.pendingPlayerSeeds[p.id] = msg.seed;
         return;
       case "UPDATE_CONFIG":
-        if (p.isCai && this.state.status === "LOBBY") this.applyConfig(msg.config);
+        if (p.isCai && this.state.status !== "BETTING") this.applyConfig(msg.config);
         return;
       case "START_ROUND":
         if (p.isCai && this.state.status === "LOBBY") await this.beginRound(playerId);
@@ -676,7 +714,7 @@ var GameAuthority = class {
     });
     this.commit();
   }
-  /** Host edits room settings in the lobby. Validated by the protocol schema. */
+  /** The cái edits room settings (LOBBY/REVEAL). Validated by the protocol schema. */
   applyConfig(patch) {
     const next = { ...this.state.config, ...patch };
     if (next.minBet > next.maxBet) next.maxBet = next.minBet;

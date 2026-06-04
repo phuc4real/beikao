@@ -139,15 +139,16 @@ async function leaveRoom(body: Body): Promise<Response> {
   const room = await loadRoom(body.roomCode);
   if (!room) return json({ ok: true });
 
+  // In-app leave (permanent) frees the seat for good — and if it was the cái's,
+  // the authority promotes the next player to host/cái so the room stays open.
+  // A tab-close beacon (permanent !== true) only marks them disconnected so a
+  // reload can reconnect; the reaper deletes the room later if it stays empty.
   const next = await applyToAuthority(room.state, { pendingSeedHex: null, pendingPlayerSeeds: {}, roundCounter: 0 }, room.host_id, body.playerId, (auth) =>
-    auth.disconnect(body.playerId),
+    body.permanent ? auth.leave(body.playerId) : auth.disconnect(body.playerId),
   );
 
-  const connected = next.state.players.filter((p) => p.connected).length;
-  // Last person leaving on purpose (the in-app "leave") closes the room now.
-  // A tab-close beacon (permanent !== true) only marks them disconnected so a
-  // reload can reconnect; the reaper deletes it later if it stays empty.
-  if (connected === 0 && body.permanent) {
+  // The room dies only when the last seat empties on purpose.
+  if (body.permanent && next.state.players.length === 0) {
     await deleteRoom(body.roomCode);
     return json({ ok: true, deleted: true });
   }

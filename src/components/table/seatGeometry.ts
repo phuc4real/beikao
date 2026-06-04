@@ -25,3 +25,13 @@ export const DEAL_FLIGHT_MS = 550;
 export function dealSpanMs(playerCount: number): number {
   return 3 * playerCount * DEAL_STEP_MS + DEAL_FLIGHT_MS;
 }
+
+/**
+ * When the full REVEAL choreography is over: deal flight + the staggered flips
+ * (the cái flips last) + a drama beat. The result overlay appears now, and the
+ * HUD balance settles now — so the number, its ±flash, and the result land
+ * together instead of the balance jumping while cards are still face-down.
+ */
+export function revealSettleMs(playerCount: number): number {
+  return dealSpanMs(playerCount) + playerCount * 220 + 1800;
+}

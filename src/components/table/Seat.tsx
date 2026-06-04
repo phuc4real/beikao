@@ -4,7 +4,23 @@ import { handLabel, isCaoHand } from '@/components/handLabel';
 import { seatOutcome } from './outcome';
 import { DEAL_STEP_MS, dealSpanMs } from './seatGeometry';
 import { formatChips } from '@/utils/money';
+import { avatarColor } from '@/utils/colors';
 import type { PlayerView, RoundView } from '@/features/room/types';
+
+/**
+ * A player's stake as a mini chip pot (their avatar colour + gold amount).
+ * Each bettor's pot sits at their own seat — in Cào cái there is NO shared
+ * centre pot (the cái banks every con separately); in Cào rùa the centre pot
+ * still shows the combined total and these mark who's in.
+ */
+export function BetPot({ amount, colorIdx }: { amount: number; colorIdx: number }) {
+  return (
+    <div className="seat-pot">
+      <span className="pchip-s" style={{ background: avatarColor(colorIdx) }} />
+      <span className="seat-pot-amt">{formatChips(amount)}</span>
+    </div>
+  );
+}
 
 /**
  * One opponent seat on the felt arc: fanned card trio + info pill + points
@@ -79,7 +95,6 @@ export function Seat({
         <Avatar name={player.name} idx={seatIndex} isCai={player.isCai} />
         <div className="seat-meta">
           <div className="seat-name">{player.name}</div>
-          {(bet ?? 0) > 0 && <div className="seat-stake">⛃ {formatChips(bet!)}</div>}
           {!round &&
             (!player.connected ? (
               <div className="seat-badge wait">mất kết nối</div>
@@ -92,6 +107,8 @@ export function Seat({
             ))}
         </div>
       </div>
+
+      {(bet ?? 0) > 0 && <BetPot amount={bet!} colorIdx={seatIndex} />}
 
       {hand && (
         <div className={`seat-pts ${isCaoHand(hand) ? 'cao' : ''} ${outcome === 'win' ? 'win' : ''}`}>

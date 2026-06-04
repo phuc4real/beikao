@@ -10,12 +10,14 @@ const FLIGHT_MS = 700;
 const STAGGER_MS = 90;
 const CHIP_COUNT = 3;
 
-/** Fly chips from `from` (the bet button) to the pot. `label` rides the top chip. */
+/** Fly chips from `from` (the bet button) to my seat pot. `label` rides the top chip. */
 export function flyChipsToPot(from: HTMLElement, chipStyle: string, label: string): void {
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-  // The pot only renders once a bet lands, so aim at the felt centre (= where
-  // the centred pot appears) and fall back to the existing pot stack if shown.
-  const target = document.querySelector('.pot-chips') ?? document.querySelector('.felt-inner');
+  // Bets land at MY seat pot (felt bottom edge) — Cào cái has no shared centre
+  // pot. The pot element only renders once the bet lands, so on the first bet
+  // fall back to the felt and aim at its bottom edge (where the pot appears).
+  const myPot = document.querySelector('.my-pot');
+  const target = myPot ?? document.querySelector('.felt-inner');
   if (!target || typeof from.animate !== 'function') return;
 
   const f = from.getBoundingClientRect();
@@ -23,7 +25,8 @@ export function flyChipsToPot(from: HTMLElement, chipStyle: string, label: strin
   const sx = f.left + f.width / 2 - CHIP_SIZE / 2;
   const sy = f.top + f.height / 2 - CHIP_SIZE / 2;
   const dx = t.left + t.width / 2 - CHIP_SIZE / 2 - sx;
-  const dy = t.top + t.height / 2 - CHIP_SIZE / 2 - sy;
+  const ty = myPot ? t.top + t.height / 2 : t.top + t.height * 0.95;
+  const dy = ty - CHIP_SIZE / 2 - sy;
 
   for (let i = 0; i < CHIP_COUNT; i++) {
     const chip = document.createElement('div');

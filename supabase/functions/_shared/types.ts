@@ -5,6 +5,7 @@
 
 export interface RoomState {
   id: string;
+  hostId: string;
   caiId: string;
   status: 'LOBBY' | 'BETTING' | 'REVEAL';
   config: { mode: 'CAO_CAI' | 'CAO_RUA'; maxPlayers: number; startingBalance: number };
@@ -34,6 +35,8 @@ export interface Intention {
 export interface AuthorityLike {
   submit(playerId: string, intention: Intention): void | Promise<void>;
   disconnect(playerId: string): void;
+  /** Permanent leave: frees the seat and promotes a new cái if needed. */
+  leave(playerId: string): void;
   reconcilePresence(presentIds: readonly string[]): void;
   setBalance(playerId: string, balance: number): void;
   tickDeadline(now: number): boolean;

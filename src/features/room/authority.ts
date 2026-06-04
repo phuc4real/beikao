@@ -224,6 +224,50 @@ export class GameAuthority {
     this.commit();
   }
 
+  /**
+   * Permanent leave (the in-app "Rời phòng", vs. disconnect() which keeps the
+   * seat for a reload-reconnect): free the seat entirely. If the leaver was the
+   * cái, the next connected player inherits host + cái so the room stays open
+   * until the last person walks out (host migration). The server deletes the
+   * room when `players` empties.
+   */
+  leave(playerId: string): void {
+    const p = this.findPlayer(playerId);
+    if (!p) {
+      if (this.state.spectators.some((s) => s.id === playerId)) {
+        this.state.spectators = this.state.spectators.filter((s) => s.id !== playerId);
+        this.commit();
+      }
+      return;
+    }
+    this.state.players = this.state.players.filter((q) => q.id !== playerId);
+    // Drop any live stake they left behind (chips only move at settlement, so
+    // nothing is owed) — keeps the pot/progress displays honest.
+    if (this.state.round?.bets) delete this.state.round.bets[playerId];
+    if (p.isCai) this.promoteNewCai();
+    this.commit();
+  }
+
+  /** The cái left for good — hand the room to the next player. */
+  private promoteNewCai(): void {
+    const heir = this.state.players.find((q) => q.connected) ?? this.state.players[0];
+    if (!heir) return; // nobody left — the server deletes the room
+    this.state.caiId = heir.id;
+    this.state.hostId = heir.id; // host == cái: the room is theirs now
+    heir.isCai = true;
+    heir.ready = true; // the cái is always in (same as a fresh room's host)
+    // A round mid-betting was anchored on the old cái — abort it and regroup in
+    // the lobby (bets only leave balances at settlement, so nothing is lost).
+    if (this.state.status === 'BETTING') {
+      this.clearTimer();
+      this.pendingSeed = null;
+      this.pendingPlayerSeeds = {};
+      this.state.status = 'LOBBY';
+      this.state.round = null;
+    }
+    this.addChat('system', 'Hệ thống', `👑 ${heir.name} là cái mới`);
+  }
+
   /** A connection dropped; keep player seats, drop spectators. */
   disconnect(playerId: string): void {
     const p = this.findPlayer(playerId);
@@ -315,7 +359,10 @@ export class GameAuthority {
         if (this.state.status === 'BETTING' && !p.isCai) this.pendingPlayerSeeds[p.id] = msg.seed;
         return;
       case 'UPDATE_CONFIG':
-        if (p.isCai && this.state.status === 'LOBBY') this.applyConfig(msg.config);
+        // LOBBY or REVEAL — never mid-BETTING (a live round's stakes are locked).
+        // Config only takes effect at the next beginRound, and accepting it at
+        // REVEAL lets the cái retune the cào-rùa ante right at the table.
+        if (p.isCai && this.state.status !== 'BETTING') this.applyConfig(msg.config);
         return;
       case 'START_ROUND':
         if (p.isCai && this.state.status === 'LOBBY') await this.beginRound(playerId);
@@ -523,7 +570,7 @@ export class GameAuthority {
     this.commit();
   }
 
-  /** Host edits room settings in the lobby. Validated by the protocol schema. */
+  /** The cái edits room settings (LOBBY/REVEAL). Validated by the protocol schema. */
   private applyConfig(patch: Partial<RoomConfig>): void {
     const next: RoomConfig = { ...this.state.config, ...patch };
     if (next.minBet > next.maxBet) next.maxBet = next.minBet;

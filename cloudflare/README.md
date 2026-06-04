@@ -34,8 +34,26 @@ npm run cf:typecheck
 ```
 
 `AUTH_SIGNING_KEY` falls back to a dev-only value locally; set a real secret for
-deploys (below). For pure UI iteration you can still `npm run dev` (Vite), but the
-API/WS only exist under the Worker, so run against `cf:dev` to exercise the backend.
+deploys (below).
+
+### UI iteration with HMR (Vite → Worker proxy)
+
+`cf:dev` serves the *built* `dist/`, so there's no hot reload. For fast UI work,
+run Vite and let it proxy `/api` (REST + the room/lobby WebSockets) to a Worker —
+the SPA is same-origin, so a dev proxy is how you point it anywhere:
+
+```bash
+# terminal 1 — the backend (Worker + DOs + local D1):
+npm run cf:dev
+# terminal 2 — Vite + HMR, proxying /api → http://127.0.0.1:8788 (the default):
+npm run dev
+# …or point the proxy at the deployed Worker instead of a local one:
+WORKER_ORIGIN=https://beikao.<subdomain>.workers.dev npm run dev
+```
+
+The proxy target is `WORKER_ORIGIN` (default `http://127.0.0.1:8788`), configured
+in `vite.config.ts`. No client code/env change is needed — the browser talks to
+Vite's origin and Vite forwards `/api` (with `ws: true`) to the Worker.
 
 ## One-time Cloudflare setup (before the first real deploy)
 

@@ -19,27 +19,27 @@ export function Chat({ className = '' }: { className?: string }) {
   };
 
   return (
-    <div className={`flex flex-col rounded-2xl bg-black/20 ${className}`}>
+    <div className={`panel flex flex-col ${className}`}>
       <div className="flex-1 space-y-1 overflow-y-auto p-3 text-sm">
-        {chat.length === 0 && <p className="text-white/30">Chưa có tin nhắn…</p>}
+        {chat.length === 0 && <p className="text-pearl/30">Chưa có tin nhắn…</p>}
         {chat.map((m) => (
           <p key={m.id}>
-            <span className="font-semibold text-amber-300">{m.name}: </span>
-            <span className="text-white/90">{m.text}</span>
+            <span className="font-semibold text-gold">{m.name}: </span>
+            <span className="text-pearl/90">{m.text}</span>
           </p>
         ))}
         <div ref={endRef} />
       </div>
-      <div className="flex gap-2 border-t border-white/10 p-2">
+      <div className="flex gap-2 border-t border-gold/15 p-2">
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
           maxLength={200}
           placeholder="Nhắn tin…"
-          className="flex-1 rounded-lg bg-black/30 px-3 py-2 text-sm outline-none"
+          className="lq-input flex-1 px-3 py-2 text-sm"
         />
-        <button onClick={submit} className="rounded-lg bg-white/10 px-3 text-sm hover:bg-white/20">
+        <button onClick={submit} className="btn-ghost rounded-lg px-3 text-sm font-semibold">
           Gửi
         </button>
       </div>

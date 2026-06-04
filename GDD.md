@@ -259,9 +259,11 @@ A live, self-updating list of joinable rooms so players don't need a code. Avail
 
 | Element | Direction |
 | --- | --- |
-| Visual style | Clean, modern "felt table" minimalism; Vietnamese-card-game warmth; high-contrast for mobile. |
-| Card animations | Deal slide-in (face-down) + **simultaneous flip** on reveal (no per-client peeking — the cái can't see hands early). |
-| Chips | Stacked chip visuals snapping to each player's bet zone. |
+| Visual style | **"Lacquer & Gold"** (as-built, UI v2): Vietnamese sơn mài lacquer oxblood reds, gold-leaf accents, mother-of-pearl creams, jade for positive outcomes, Đông Sơn bronze-drum / key-fret / cloud-spiral motifs. **No casino green.** Elliptical gold-rimmed table; opponents arc the top, the local player's hand sits in the bottom bar. High-contrast for mobile. |
+| Typography | **Be Vietnam Pro** for all text (renders stacked Vietnamese diacritics correctly); **Playfair Display** only for the Latin "BEIKAO" wordmark. |
+| Card art | Inline-SVG faces (pips + framed monogram courts) and three selectable backs — **trống đồng (default), phượng hoàng, hoa sen** — a personal, client-side preference. |
+| Card animations | Deal slide-in (face-down) + **simultaneous flip** on reveal (no per-client peeking — the cái can't see hands early); the cái's cards flip **last** for suspense. |
+| Chips | Round chip buttons (classic / gold coin / jade token — personal preference) for quick bets; pot chip stack tinted per bettor at table centre. |
 | Special hands | Distinct highlight + label for **cào (9)**, **ba tiên**, and **bù (0)**. |
 | Suit tie-break | Animated callout showing the deciding card and its suit rank when a tie is broken. |
 | Sound (optional) | Card deal, chip clink, win/lose sting, countdown tick, special-hand fanfare. Mutable. |

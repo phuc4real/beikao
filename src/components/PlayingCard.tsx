@@ -1,13 +1,23 @@
-import { isRedSuit, SUIT_SYMBOL, type Card } from '@/features/cao';
+import { SUIT_SYMBOL, type Card } from '@/features/cao';
+import { CardFace } from './cards/CardFace';
+import { CardBack } from './cards/CardBack';
+import { usePrefs } from '@/utils/prefs';
+import './cards/cards.css';
 
-const SIZES = {
-  sm: 'h-14 w-10 text-base',
-  md: 'h-20 w-14 text-2xl',
-  lg: 'h-28 w-20 text-4xl',
+/** Responsive width presets (see cards.css — they shrink below 720px). */
+export const CARD_SIZE_CLASS = {
+  sm: 'cw-sm',
+  md: 'cw-md',
+  lg: 'cw-lg',
 } as const;
 
-export type CardSize = keyof typeof SIZES;
+export type CardSize = keyof typeof CARD_SIZE_CLASS;
 
+/**
+ * One static card (front or back) in the "Lacquer & Gold" deck. Sizing keys
+ * off the `--w` custom property; when rendered inside TableCard the size
+ * class lives on the flip container, so `size` here just needs to match.
+ */
 export function PlayingCard({
   card,
   faceDown = false,
@@ -15,29 +25,28 @@ export function PlayingCard({
 }: {
   card?: Card;
   faceDown?: boolean;
-  size?: keyof typeof SIZES;
+  size?: CardSize;
 }) {
-  const dims = SIZES[size];
+  const back = usePrefs((s) => s.cardBack);
+
   if (faceDown || !card) {
     return (
-      <div
-        className={`${dims} flex items-center justify-center rounded-lg border border-white/20 bg-gradient-to-br from-indigo-800 to-indigo-950 shadow`}
-        aria-label="Lá úp"
-      >
-        <span className="text-white/30">✦</span>
+      <div className={`${CARD_SIZE_CLASS[size]} cardbox relative`} aria-label="Lá úp">
+        <div className="card-back-face">
+          <CardBack design={back} />
+        </div>
       </div>
     );
   }
-  const red = isRedSuit(card.suit);
+
   return (
     <div
-      className={`${dims} flex flex-col items-center justify-center rounded-lg border border-black/10 bg-white font-bold shadow ${
-        red ? 'text-red-600' : 'text-gray-900'
-      }`}
+      className={`${CARD_SIZE_CLASS[size]} cardbox relative`}
       aria-label={`${card.rank}${SUIT_SYMBOL[card.suit]}`}
     >
-      <span className="leading-none">{card.rank}</span>
-      <span className="leading-none">{SUIT_SYMBOL[card.suit]}</span>
+      <div className="card-front">
+        <CardFace card={card} />
+      </div>
     </div>
   );
 }

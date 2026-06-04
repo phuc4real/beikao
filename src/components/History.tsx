@@ -52,13 +52,13 @@ export function HistoryPanel() {
 
   return (
     <Panel className="space-y-2">
-      <div className="text-xs uppercase tracking-wide text-white/50">Lịch sử</div>
+      <div className="text-xs uppercase tracking-widest text-gold/70">Lịch sử</div>
       <div className="flex flex-wrap gap-1.5">
         {history.map((r) => (
           <button
             key={r.roundNumber}
             onClick={() => setReplay(r)}
-            className="rounded-lg bg-white/10 px-2.5 py-1 text-sm hover:bg-white/20"
+            className="btn-ghost rounded-lg px-2.5 py-1 text-sm"
             title="Xem lại ván"
           >
             Ván {r.roundNumber} ▸
@@ -78,7 +78,7 @@ function ReplayModal({ round, onClose }: { round: RoundView; onClose: () => void
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
-        className="max-h-[85vh] w-full max-w-md space-y-3 overflow-y-auto rounded-2xl bg-felt-dark p-5 ring-1 ring-white/10"
+        className="panel max-h-[85vh] w-full max-w-md space-y-3 overflow-y-auto p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -101,7 +101,7 @@ function ReplayModal({ round, onClose }: { round: RoundView; onClose: () => void
               <li key={id} className="rounded-xl bg-black/25 p-2">
                 <div className="mb-1 flex items-center justify-between text-sm">
                   <span className="font-medium">{nameOf(id)}</span>
-                  <span className="text-amber-300">{handLabel(hand)}</span>
+                  <span className="font-semibold text-gold">{handLabel(hand)}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   {[0, 1, 2].map((i) => (

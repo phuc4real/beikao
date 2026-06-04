@@ -5,7 +5,7 @@ import { RoomPage } from '@/pages/RoomPage';
 export function App() {
   return (
     <HashRouter>
-      <div className="min-h-full bg-felt-dark text-white">
+      <div className="min-h-full text-pearl">
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/room" element={<RoomPage />} />

@@ -1,0 +1,150 @@
+/* ============================================================
+   BEIKAO — card visual styles (ported from the handoff's cards.css).
+   Everything keys off the --w custom property (card width);
+   height = --w × 1.4, radius = --w × 0.1.
+   ============================================================ */
+
+/* Responsive size presets — classes (not inline styles) so media queries
+   can shrink cards on small screens without specificity fights. */
+.cw-sm {
+  --w: 60px;
+}
+.cw-md {
+  --w: 78px;
+}
+.cw-lg {
+  --w: 86px;
+}
+@media (max-width: 720px) {
+  .cw-sm {
+    --w: 44px;
+  }
+  .cw-md {
+    --w: 60px;
+  }
+  .cw-lg {
+    --w: 64px;
+  }
+}
+
+/* The sized card box (shared by PlayingCard and TableCard's flip container). */
+.cardbox {
+  width: var(--w);
+  height: calc(var(--w) * 1.4);
+  flex: 0 0 auto;
+}
+
+.card-front,
+.card-back-face {
+  position: absolute;
+  inset: 0;
+  border-radius: calc(var(--w) * 0.1);
+  overflow: hidden;
+  box-shadow: var(--sh-card);
+}
+.card-front {
+  background: linear-gradient(150deg, #fffdf7, var(--card) 60%, var(--card-edge));
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+.card-back-face {
+  border: 1px solid var(--gold-deep);
+}
+
+/* ---- card face internals ---- */
+.cardface {
+  position: absolute;
+  inset: 0;
+  font-family: var(--display);
+}
+.cf-corner {
+  position: absolute;
+  top: calc(var(--w) * 0.055);
+  left: calc(var(--w) * 0.07);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 0.92;
+  font-weight: 800;
+}
+.cf-corner-br {
+  top: auto;
+  left: auto;
+  bottom: calc(var(--w) * 0.055);
+  right: calc(var(--w) * 0.07);
+  transform: rotate(180deg);
+}
+.cf-rank {
+  font-size: calc(var(--w) * 0.24);
+  font-weight: 800;
+}
+.cf-suit {
+  font-size: calc(var(--w) * 0.19);
+}
+
+.cf-pips {
+  position: absolute;
+  inset: calc(var(--w) * 0.14) calc(var(--w) * 0.08);
+}
+.cf-pip {
+  position: absolute;
+  font-size: calc(var(--w) * 0.2);
+  line-height: 1;
+}
+
+/* court cards (J/Q/K) */
+.cf-court {
+  position: absolute;
+  inset: calc(var(--w) * 0.16) calc(var(--w) * 0.13);
+}
+.cf-court-frame {
+  position: absolute;
+  inset: 0;
+  border: 2px solid currentColor;
+  border-radius: calc(var(--w) * 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4%;
+  background: repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.04) 0 3px, transparent 3px 7px);
+}
+.cf-court-frame::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid currentColor;
+  opacity: 0.4;
+  border-radius: calc(var(--w) * 0.045);
+}
+.cf-court-letter {
+  font-size: calc(var(--w) * 0.52);
+  font-weight: 800;
+}
+.cf-court-suit {
+  font-size: calc(var(--w) * 0.3);
+}
+
+/* card backs */
+.cardback {
+  position: absolute;
+  inset: 0;
+}
+.cardback::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1.5px solid rgba(217, 178, 94, 0.55);
+  border-radius: calc(var(--w) * 0.07);
+  pointer-events: none;
+}
+
+/* win/lose dressing (applied on the TableCard wrapper) */
+.card-glow .card-front {
+  box-shadow:
+    0 0 0 2px var(--gold),
+    0 0 22px rgba(244, 227, 168, 0.7),
+    var(--sh-card);
+}
+.card-dim {
+  filter: brightness(0.62) saturate(0.8);
+}

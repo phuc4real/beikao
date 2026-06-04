@@ -1,0 +1,93 @@
+/* ============================================================
+   BEIKAO — Card visual styles
+   ============================================================ */
+
+.card {
+  --w: 92px;
+  width: var(--w);
+  height: calc(var(--w) * 1.4);
+  position: relative;
+  perspective: 900px;
+  flex: 0 0 auto;
+}
+.card-face-wrap {
+  position: absolute; inset: 0;
+  border-radius: calc(var(--w) * .1);
+}
+.card.flipping .card-face-wrap { animation: flipIn .44s cubic-bezier(.2,.7,.2,1); }
+@keyframes flipIn {
+  0%   { transform: rotateY(-82deg) scale(.96); }
+  100% { transform: rotateY(0deg) scale(1); }
+}
+
+.card-front, .card-back-face {
+  position: absolute; inset: 0;
+  border-radius: calc(var(--w) * .1);
+  overflow: hidden;
+  box-shadow: var(--sh-card);
+}
+.card-front {
+  background: linear-gradient(150deg, #fffdf7, var(--card) 60%, var(--card-edge));
+  border: 1px solid rgba(0,0,0,.12);
+}
+.card-back-face {
+  border: 1px solid var(--gold-deep);
+}
+
+/* ---- card face internals ---- */
+.cardface {
+  position: absolute; inset: 0;
+  padding: calc(var(--w) * .06);
+  font-family: var(--display);
+}
+.cf-corner {
+  position: absolute;
+  top: calc(var(--w) * .055);
+  left: calc(var(--w) * .07);
+  display: flex; flex-direction: column; align-items: center;
+  line-height: .92;
+  font-weight: 800;
+}
+.cf-corner-br {
+  top: auto; left: auto;
+  bottom: calc(var(--w) * .055);
+  right: calc(var(--w) * .07);
+  transform: rotate(180deg);
+}
+.cf-rank { font-size: calc(var(--w) * .24); font-family: var(--ui); font-weight: 800; }
+.cf-suit { font-size: calc(var(--w) * .19); }
+
+.cf-pips { position: absolute; inset: calc(var(--w)*.14) calc(var(--w)*.08); }
+.cf-pip { position: absolute; font-size: calc(var(--w) * .2); line-height: 1; }
+
+/* court cards */
+.cf-court { position: absolute; inset: calc(var(--w)*.16) calc(var(--w)*.13); }
+.cf-court-frame {
+  position: absolute; inset: 0;
+  border: 2px solid currentColor;
+  border-radius: calc(var(--w)*.06);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4%;
+  background:
+    repeating-linear-gradient(45deg, rgba(0,0,0,.04) 0 3px, transparent 3px 7px);
+}
+.cf-court-frame::before {
+  content: ""; position: absolute; inset: 4px; border: 1px solid currentColor; opacity:.4;
+  border-radius: calc(var(--w)*.045);
+}
+.cf-court-letter { font-size: calc(var(--w) * .52); font-weight: 800; font-family: var(--display); }
+.cf-court-suit { font-size: calc(var(--w) * .3); }
+
+/* card backs */
+.cardback { position: absolute; inset: 0; }
+.cardback::after {
+  content: ""; position: absolute; inset: 4px;
+  border: 1.5px solid rgba(217,178,94,.55);
+  border-radius: calc(var(--w) * .07);
+  pointer-events: none;
+}
+
+/* deal / glow states */
+.card.glow .card-front { box-shadow: 0 0 0 2px var(--gold), 0 0 22px rgba(244,227,168,.7), var(--sh-card); }
+.card.dim { filter: brightness(.62) saturate(.8); }
+.card.lift { transform: translateY(-10px); }

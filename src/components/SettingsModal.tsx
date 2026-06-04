@@ -22,7 +22,7 @@ function NumberField({
 }) {
   return (
     <label className="flex items-center justify-between gap-3">
-      <span className="text-sm text-white/70">{label}</span>
+      <span className="text-sm text-pearl/70">{label}</span>
       <span className="flex items-center gap-1">
         <input
           type="number"
@@ -31,9 +31,9 @@ function NumberField({
           max={max}
           step={step}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="w-24 rounded-lg bg-black/40 px-2 py-1.5 text-right outline-none ring-amber-400 focus:ring-2"
+          className="lq-input w-24 px-2 py-1.5 text-right"
         />
-        {suffix && <span className="text-sm text-white/40">{suffix}</span>}
+        {suffix && <span className="text-sm text-pearl/40">{suffix}</span>}
       </span>
     </label>
   );
@@ -64,17 +64,17 @@ export function SettingsModal({ config, onClose }: { config: RoomConfig; onClose
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-sm space-y-4 rounded-2xl bg-felt-dark p-5 ring-1 ring-white/10"
+        className="panel panel-gilt w-full max-w-sm space-y-4 p-5"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-bold">Cài đặt phòng</h2>
+        <h2 className="font-display text-lg font-bold">Cài đặt phòng</h2>
 
         <label className="flex items-center justify-between gap-3">
-          <span className="text-sm text-white/70">Chế độ</span>
+          <span className="text-sm text-pearl/70">Chế độ</span>
           <select
             value={draft.mode}
             onChange={(e) => set('mode', e.target.value as RoomConfig['mode'])}
-            className="rounded-lg bg-black/40 px-2 py-1.5 outline-none"
+            className="lq-input px-2 py-1.5"
           >
             <option value="CAO_CAI">Cào cái</option>
             <option value="CAO_RUA">Cào rùa (hũ)</option>
@@ -89,7 +89,7 @@ export function SettingsModal({ config, onClose }: { config: RoomConfig; onClose
         <NumberField label="Thưởng cào (9)" value={draft.caoPayout} onChange={(v) => set('caoPayout', v)} min={1} max={10} step={0.5} suffix="×" />
         <NumberField label="Số người tối đa" value={draft.maxPlayers} onChange={(v) => set('maxPlayers', v)} min={2} max={16} />
 
-        <p className="text-xs text-white/40">
+        <p className="text-xs text-pearl/40">
           Đổi “chip ban đầu” và “số người tối đa” chỉ áp dụng cho người vào sau.
         </p>
 

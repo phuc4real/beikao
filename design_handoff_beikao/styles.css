@@ -1,0 +1,182 @@
+/* ============================================================
+   BEIKAO — Lacquer & Gold design system
+   ============================================================ */
+
+:root {
+  /* Lacquer reds (sơn mài) */
+  --lacquer:       #6b0f17;
+  --lacquer-deep:  #4a0a10;
+  --lacquer-bright:#8a141d;
+  --ox:            #2a0608;
+  --ink:           #170406;
+  --ink-true:      #0c0204;
+
+  /* Gold leaf */
+  --gold:        #d9b25e;
+  --gold-light:  #f4e3a8;
+  --gold-mid:    #c79a44;
+  --gold-deep:   #8a6420;
+  --gold-shadow: #5b3f12;
+
+  /* Pearl / cream */
+  --pearl:   #f6efe0;
+  --pearl-2: #ece0c8;
+  --card:    #faf6ec;
+  --card-edge:#e6d9bc;
+
+  /* Accents */
+  --jade:      #3f9d77;
+  --jade-deep: #1f6b4c;
+  --suit-red:  #b3242b;
+  --suit-blk:  #221a17;
+
+  /* Gradients */
+  --grad-gold: linear-gradient(160deg, var(--gold-light) 0%, var(--gold) 38%, var(--gold-mid) 60%, var(--gold-deep) 100%);
+  --grad-gold-soft: linear-gradient(160deg, #fbf0c8 0%, var(--gold) 55%, var(--gold-mid) 100%);
+  --grad-lacquer: radial-gradient(120% 100% at 50% 0%, var(--lacquer-bright) 0%, var(--lacquer) 30%, var(--lacquer-deep) 72%, var(--ox) 100%);
+
+  /* Type */
+  /* Type — Be Vietnam Pro renders all Vietnamese diacritics reliably; serif kept for the Latin logo */
+  --display: "Be Vietnam Pro", system-ui, sans-serif;
+  --logo: "Playfair Display", Georgia, serif;
+  --ui: "Be Vietnam Pro", system-ui, sans-serif;
+
+  /* Shadow */
+  --sh-card: 0 18px 40px -12px rgba(0,0,0,.6), 0 3px 8px rgba(0,0,0,.4);
+  --sh-soft: 0 10px 30px -8px rgba(0,0,0,.5);
+  --gold-line: rgba(217,178,94,.5);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  font-family: var(--ui);
+  color: var(--pearl);
+  background: var(--ink-true);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeSpeed;
+  overflow: hidden;
+}
+#root, .bk-stage { max-width: 100%; }
+
+#root { height: 100vh; width: 100%; }
+
+/* ---------- atmospheric backdrop ---------- */
+.bk-stage {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--grad-lacquer);
+}
+.bk-stage::before { /* grain */
+  content: "";
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='0.5'/></svg>");
+  opacity: .045;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  z-index: 2;
+}
+.bk-stage::after { /* vignette */
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(120% 90% at 50% 38%, transparent 45%, rgba(0,0,0,.55) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+.bk-motif {
+  position: absolute; inset: 0;
+  background-repeat: repeat;
+  opacity: .05;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---------- gold text ---------- */
+.gold-text {
+  background: var(--grad-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,.35));
+  padding-right: .06em;
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  font-family: var(--ui);
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  border-radius: 12px;
+  letter-spacing: .02em;
+  transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+  position: relative;
+}
+.btn:active { transform: translateY(1px) scale(.99); }
+
+.btn-gold {
+  background: var(--grad-gold);
+  color: #3a2606;
+  box-shadow: 0 6px 16px -4px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.55), inset 0 -2px 6px rgba(120,80,10,.5);
+  border: 1px solid var(--gold-deep);
+  text-shadow: 0 1px 0 rgba(255,255,255,.3);
+}
+.btn-gold:hover { filter: brightness(1.06); box-shadow: 0 10px 24px -6px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.6); }
+
+.btn-ghost {
+  background: rgba(255,255,255,.04);
+  color: var(--gold-light);
+  border: 1px solid var(--gold-line);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+}
+.btn-ghost:hover { background: rgba(217,178,94,.12); border-color: var(--gold); }
+
+.btn-jade {
+  background: linear-gradient(160deg, #4fb98c, var(--jade) 55%, var(--jade-deep));
+  color: #eafff5;
+  border: 1px solid var(--jade-deep);
+  box-shadow: 0 6px 16px -4px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.3);
+  text-shadow: 0 1px 1px rgba(0,0,0,.25);
+}
+
+/* ---------- gold framed panel ---------- */
+.panel {
+  background:
+    linear-gradient(180deg, rgba(40,8,10,.86), rgba(20,4,6,.94));
+  border: 1px solid var(--gold-line);
+  border-radius: 16px;
+  box-shadow: var(--sh-soft), inset 0 1px 0 rgba(255,255,255,.05);
+  position: relative;
+}
+.panel-gilt::before {
+  content: "";
+  position: absolute; inset: 5px;
+  border: 1px solid rgba(217,178,94,.25);
+  border-radius: 11px;
+  pointer-events: none;
+}
+
+/* hairline gold divider with center diamond */
+.gold-rule {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--gold);
+}
+.gold-rule::before, .gold-rule::after {
+  content: ""; height: 1px; flex: 1;
+  background: linear-gradient(90deg, transparent, var(--gold-line), transparent);
+}
+
+/* scrollbars */
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-thumb { background: rgba(217,178,94,.3); border-radius: 9px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+@keyframes fadeUp { from { opacity:0; transform: translateY(14px);} to {opacity:1; transform:none;} }
+@keyframes pop { 0%{transform:scale(.6);opacity:0;} 60%{transform:scale(1.08);} 100%{transform:scale(1);opacity:1;} }
+@keyframes glowPulse { 0%,100%{ filter: drop-shadow(0 0 4px rgba(244,227,168,.5)); } 50%{ filter: drop-shadow(0 0 16px rgba(244,227,168,.95)); } }
+@keyframes shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+@keyframes float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-6px);} }

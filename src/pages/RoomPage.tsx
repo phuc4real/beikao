@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '@/app/store/store';
 import { Button } from '@/components/ui';
+import { Stage } from '@/components/Stage';
 import { Lobby } from '@/components/Lobby';
 import { GameTable } from '@/components/GameTable';
 import { Toast } from '@/components/Toast';
@@ -51,6 +52,7 @@ export function RoomPage() {
 
   return (
     <>
+      <Stage motif="cloud" />
       {room.status === 'LOBBY' ? <Lobby /> : <GameTable />}
       <Toast />
     </>
@@ -58,5 +60,10 @@ export function RoomPage() {
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
-  return <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-6">{children}</main>;
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-6">
+      <Stage motif="cloud" />
+      {children}
+    </main>
+  );
 }

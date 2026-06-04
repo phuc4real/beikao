@@ -33,13 +33,13 @@ export function FairnessBadge({ round }: { round: RoundView }) {
   let chip: { text: string; cls: string };
   switch (status.state) {
     case 'pending':
-      chip = { text: '🔒 Bộ bài đã niêm phong', cls: 'bg-white/10 text-white/70' };
+      chip = { text: '🔒 Bộ bài đã niêm phong', cls: 'pill text-pearl/70' };
       break;
     case 'verifying':
-      chip = { text: '… đang xác minh', cls: 'bg-white/10 text-white/70' };
+      chip = { text: '… đang xác minh', cls: 'pill text-pearl/70' };
       break;
     case 'ok':
-      chip = { text: '✓ Đã xác minh công bằng', cls: 'bg-green-600/30 text-green-300' };
+      chip = { text: '✓ Đã xác minh công bằng', cls: 'bg-jade-deep/40 text-jade ring-1 ring-jade/40' };
       break;
     case 'failed':
       chip = { text: `✗ ${status.reason}`, cls: 'bg-red-600/40 text-red-200' };

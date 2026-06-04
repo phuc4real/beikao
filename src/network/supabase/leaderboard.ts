@@ -10,6 +10,15 @@ export interface LeaderboardRow {
   wins: number;
 }
 
+/** Own durable wallet balance (drives the Home wallet). Null if unknown/new. */
+export async function fetchProfileBalance(id: string): Promise<number | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('leaderboard').select('balance').eq('id', id).maybeSingle();
+  if (error || !data) return null;
+  return (data as { balance: number }).balance;
+}
+
 /** Top players by cumulative net winnings. Empty if Supabase isn't configured. */
 export async function fetchLeaderboard(): Promise<LeaderboardRow[]> {
   const supabase = getSupabase();

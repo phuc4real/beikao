@@ -1,12 +1,6 @@
-import { useEffect, useState } from 'react';
-import { PlayingCard, type CardSize } from './PlayingCard';
+import { useEffect, useState, type CSSProperties } from 'react';
+import { PlayingCard, CARD_SIZE_CLASS, type CardSize } from './PlayingCard';
 import type { Card } from '@/features/cao';
-
-const CONTAINER: Record<CardSize, string> = {
-  sm: 'h-14 w-10',
-  md: 'h-20 w-14',
-  lg: 'h-28 w-20',
-};
 
 /**
  * A seat card that animates: it cascades in face-down when dealt ("chia bài"),
@@ -14,6 +8,8 @@ const CONTAINER: Record<CardSize, string> = {
  *
  * - `dealDelayMs` staggers the deal-in cascade across seats/cards.
  * - `flipDelayMs` staggers the reveal flip once `revealed` becomes true.
+ * - `className` lets callers add win/lose dressing (`card-glow` / `card-dim`)
+ *   and fan transforms without touching the flip internals.
  * Remount the component per round (via a round-keyed `key`) so the deal-in
  * cascade replays each new round.
  */
@@ -23,12 +19,16 @@ export function TableCard({
   size = 'sm',
   dealDelayMs = 0,
   flipDelayMs = 0,
+  className = '',
+  style,
 }: {
   card?: Card;
   revealed: boolean;
   size?: CardSize;
   dealDelayMs?: number;
   flipDelayMs?: number;
+  className?: string;
+  style?: CSSProperties;
 }) {
   const [flipped, setFlipped] = useState(false);
 
@@ -42,7 +42,10 @@ export function TableCard({
   }, [revealed, flipDelayMs]);
 
   return (
-    <div className={`card3d deal-in relative ${CONTAINER[size]}`} style={{ animationDelay: `${dealDelayMs}ms` }}>
+    <div
+      className={`card3d cardbox deal-in relative ${CARD_SIZE_CLASS[size]} ${className}`}
+      style={{ animationDelay: `${dealDelayMs}ms`, ...style }}
+    >
       <div className={`flip-inner absolute inset-0 ${flipped ? 'flipped' : ''}`}>
         <div className="flip-face absolute inset-0">
           <PlayingCard faceDown size={size} />

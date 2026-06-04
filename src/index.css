@@ -52,21 +52,16 @@ body {
   perspective: 700px;
 }
 
-/* "Lật bài": 3D flip from face-down (rotateY 0) to face-up (rotateY 180). */
-.flip-inner {
-  transform-style: preserve-3d;
+/* "Lật bài": midpoint-swap flip — the card turns edge-on, TableCard swaps the
+   rendered face at 90°, then it turns back. Only one face is ever rendered, so
+   there's no preserve-3d / backface-visibility pair to mis-render (mirrored or
+   wrong faces on some GPU + display-scaling combos). Half-duration must match
+   FLIP_HALF_MS in TableCard.tsx. */
+.flip-half {
   transform: rotateY(0deg);
 }
-.flip-inner.flipped {
-  transform: rotateY(180deg);
-}
-
-.flip-face {
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-.flip-face.flip-front {
-  transform: rotateY(180deg);
+.flip-half.edge {
+  transform: rotateY(90deg);
 }
 
 /* Floating emoji reactions drifting up and fading out. */
@@ -98,7 +93,10 @@ body {
     animation: deal-fly 0.55s cubic-bezier(0.25, 0.8, 0.3, 1) backwards;
     will-change: transform;
   }
-  .flip-inner {
-    transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.3, 1);
+  .flip-half {
+    transition: transform 0.25s ease-out; /* edge → flat (face just swapped) */
+  }
+  .flip-half.edge {
+    transition-timing-function: ease-in; /* flat → edge (accelerate into the turn) */
   }
 }

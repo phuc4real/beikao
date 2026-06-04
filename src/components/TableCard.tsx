@@ -2,9 +2,19 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { PlayingCard, CARD_SIZE_CLASS, type CardSize } from './PlayingCard';
 import type { Card } from '@/features/cao';
 
+/** Half of the flip (ms): face-down → edge-on, then edge-on → face-up.
+    Must match the `.flip-half` transition in index.css. */
+const FLIP_HALF_MS = 250;
+
 /**
  * A seat card that animates: it cascades in face-down when dealt ("chia bài"),
  * then flips to reveal its face at REVEAL ("lật bài").
+ *
+ * The flip is a midpoint face-swap: the card turns edge-on (rotateY 90°), the
+ * single rendered face swaps from back to front, then it turns back to flat.
+ * Only ONE face is ever in the DOM — deliberately NOT the classic coplanar
+ * two-face `preserve-3d` + `backface-visibility` flip, which mis-renders
+ * (mirrored or wrong face) on some GPU / display-scaling combos.
  *
  * - `flyIn` makes the deal-in a flight from the deck (the felt centre) to the
  *   card's resting spot, instead of the default drop-in-place.
@@ -35,15 +45,19 @@ export function TableCard({
   style?: CSSProperties;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
-  const [flipped, setFlipped] = useState(false);
+  const [stage, setStage] = useState<'down' | 'edge' | 'up'>('down');
 
   useEffect(() => {
     if (!revealed) {
-      setFlipped(false);
+      setStage('down');
       return;
     }
-    const t = setTimeout(() => setFlipped(true), flipDelayMs);
-    return () => clearTimeout(t);
+    const t1 = setTimeout(() => setStage('edge'), flipDelayMs);
+    const t2 = setTimeout(() => setStage('up'), flipDelayMs + FLIP_HALF_MS);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [revealed, flipDelayMs]);
 
   // Fly-in cards launch from the felt centre (the "deck"): measure this card's
@@ -67,13 +81,8 @@ export function TableCard({
       className={`card3d cardbox ${flyIn ? 'deal-fly' : 'deal-in'} relative ${CARD_SIZE_CLASS[size]} ${className}`}
       style={{ animationDelay: `${dealDelayMs}ms`, ...style }}
     >
-      <div className={`flip-inner absolute inset-0 ${flipped ? 'flipped' : ''}`}>
-        <div className="flip-face absolute inset-0">
-          <PlayingCard faceDown size={size} />
-        </div>
-        <div className="flip-face flip-front absolute inset-0">
-          <PlayingCard card={card} size={size} />
-        </div>
+      <div className={`flip-half absolute inset-0 ${stage === 'edge' ? 'edge' : ''}`}>
+        <PlayingCard card={card} faceDown={stage !== 'up'} size={size} />
       </div>
     </div>
   );

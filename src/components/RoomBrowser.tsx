@@ -104,7 +104,7 @@ export function RoomBrowser({ onJoin, canJoin }: Props) {
           {rooms.length === 0 ? 'Chưa có phòng công khai nào. Tạo một phòng để bắt đầu!' : 'Không tìm thấy sảnh nào.'}
         </p>
       ) : (
-        <ul className="grid max-h-96 grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2">
+        <ul className="grid max-h-96 grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
           {list.map((r) => {
             const full = r.player_count >= r.max_players;
             const hot = !full && r.player_count / r.max_players >= 0.75;

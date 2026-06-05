@@ -1,18 +1,34 @@
 import { ANIM } from '@/config/animation';
 
 /**
- * Distribute n opponents along the upper arc of the elliptical felt
- * (the local player lives in the bottom hand bar, never on the felt).
- * Returns angles in radians; 180° (left edge) → 360° (right edge).
+ * The felt's two shapes. `wide` is the default wide ellipse (landscape/desktop);
+ * `tall` is the portrait-phone capsule, where the felt is taller than it is wide
+ * (see the `.felt` orientation blocks in theme.css). The seat arc widens and the
+ * ellipse radii change so seats run down the sides instead of bunching across a
+ * squashed top edge.
  */
-export function seatAngles(n: number): number[] {
+export type SeatLayout = 'wide' | 'tall';
+
+/**
+ * Distribute n opponents along the arc of the elliptical felt (the local player
+ * lives in the bottom hand bar, never on the felt). Returns angles in radians.
+ * `wide`: a 180° upper arc (left edge → right edge). `tall`: a wider ~220° span
+ * starting higher up the left side, so seats wrap further down the sides.
+ */
+export function seatAngles(n: number, layout: SeatLayout = 'wide'): number[] {
   if (n <= 0) return [];
-  return Array.from({ length: n }, (_, i) => ((180 + ((i + 0.5) / n) * 180) * Math.PI) / 180);
+  const span = layout === 'tall' ? 220 : 180;
+  const start = layout === 'tall' ? 160 : 180;
+  return Array.from({ length: n }, (_, i) => ((start + ((i + 0.5) / n) * span) * Math.PI) / 180);
 }
 
-/** Percent coordinates on the felt for a seat angle. */
-export function seatXY(angle: number): { x: number; y: number } {
-  return { x: 50 + 46 * Math.cos(angle), y: 53 + 38 * Math.sin(angle) };
+/** Percent coordinates on the felt for a seat angle, per layout (see SeatLayout). */
+export function seatXY(angle: number, layout: SeatLayout = 'wide'): { x: number; y: number } {
+  // tall: a narrower, taller ellipse with the centre nudged up; wide: today's.
+  const rx = layout === 'tall' ? 40 : 46;
+  const ry = layout === 'tall' ? 44 : 38;
+  const cy = layout === 'tall' ? 48 : 53;
+  return { x: 50 + rx * Math.cos(angle), y: cy + ry * Math.sin(angle) };
 }
 
 /* ── Deal choreography ─────────────────────────────────────────────────

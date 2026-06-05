@@ -1,4 +1,31 @@
 import { useEffect, useState } from 'react';
+import type { SeatLayout } from '@/components/table/seatGeometry';
+
+/** Subscribe to a CSS media query, SSR-safe. Returns false until mounted. */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    onChange();
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
+}
+
+/**
+ * Picks the felt/seat layout for the current viewport (see SeatLayout). Portrait
+ * phones (≤720px wide) get the `tall` capsule felt; everything else stays `wide`.
+ * `shortLandscape` flags squat landscape viewports (phones held sideways) where
+ * height is the scarce axis. Presentation-only — never touches game state.
+ */
+export function useLayoutMode(): { layout: SeatLayout; shortLandscape: boolean } {
+  const tallPortrait = useMediaQuery('(orientation: portrait) and (max-width: 720px)');
+  const shortLandscape = useMediaQuery('(orientation: landscape) and (max-height: 520px)');
+  return { layout: tallPortrait ? 'tall' : 'wide', shortLandscape };
+}
 
 /**
  * Seconds remaining until `endsAt` (host-clock epoch ms), ticking every 250ms.

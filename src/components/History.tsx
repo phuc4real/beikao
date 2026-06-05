@@ -79,7 +79,7 @@ function ReplayModal({ round, onClose }: { round: RoundView; onClose: () => void
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
-        className="panel max-h-[85vh] w-full max-w-md space-y-3 overflow-y-auto p-5"
+        className="panel max-h-[85dvh] w-full max-w-md space-y-3 overflow-y-auto p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">

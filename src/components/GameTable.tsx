@@ -17,6 +17,7 @@ import { AnteControl } from '@/components/table/AnteControl';
 import { MyHandBar } from '@/components/table/MyHandBar';
 import { BeikaoEmblem } from '@/components/table/BeikaoEmblem';
 import { seatAngles, seatXY, revealSettleMs } from '@/components/table/seatGeometry';
+import { useLayoutMode } from '@/app/hooks';
 import { ANIM } from '@/config/animation';
 import { randomSeedHex } from '@/utils/crypto';
 import { formatChips } from '@/utils/money';
@@ -92,18 +93,22 @@ export function GameTable() {
   const openSeats = room.config.maxPlayers - room.players.length;
 
   // Opponents take the felt arc; I live in the bottom bar. Spectators watch
-  // everyone from the arc.
+  // everyone from the arc. The felt shape + arc adapt to orientation: portrait
+  // phones get a taller capsule (`tall`) so seats wrap down the sides.
+  const { layout } = useLayoutMode();
   const opponents = room.players.filter((p) => p.id !== me?.id);
-  const angles = seatAngles(opponents.length);
+  const angles = seatAngles(opponents.length, layout);
 
   return (
-    <main className="flex min-h-screen flex-col">
-      {/* HUD */}
-      <header className="z-10 flex items-center justify-between gap-2 px-4 pt-3">
+    <main className="flex min-h-dvh flex-col">
+      {/* HUD — wraps on very narrow phones (flex-wrap) and goes single-row from
+          the `tab` breakpoint up; the centre room-info panel shrinks/truncates
+          so it never pushes the balance off-screen. */}
+      <header className="px-safe z-10 flex flex-wrap items-center justify-between gap-1 px-2 pt-2 tab:flex-nowrap tab:gap-2 tab:px-4 tab:pt-3">
         <Button variant="ghost" className="px-3 py-2 text-sm" onClick={goHome}>
           ← {lobby ? 'Rời phòng' : 'Rời bàn'}
         </Button>
-        <div className="panel flex flex-col items-center px-5 py-1.5 leading-tight">
+        <div className="panel flex min-w-0 max-w-[60vw] flex-col items-center px-3 py-1.5 leading-tight tab:max-w-none tab:px-5">
           {lobby || !round ? (
             <>
               <span className="flex items-center gap-2">
@@ -116,7 +121,7 @@ export function GameTable() {
                   {copied ? '✓' : '⧉ Link'}
                 </button>
               </span>
-              <span className="text-[10px] tracking-wide text-pearl/55">
+              <span className="max-w-full truncate text-[10px] tracking-wide text-pearl/55">
                 {room.config.mode === 'CAO_CAI' ? 'Cào cái' : 'Cào rùa'} · {connected.length}/{room.config.maxPlayers}{' '}
                 người
                 {room.spectators.length > 0 && <> · 👁 {room.spectators.length} xem</>}
@@ -127,7 +132,7 @@ export function GameTable() {
               <GoldText className="font-display text-base font-bold">
                 {room.id} · Ván {round.roundNumber}
               </GoldText>
-              <span className="text-[10px] tracking-wide text-pearl/55">
+              <span className="max-w-full truncate text-[10px] tracking-wide text-pearl/55">
                 Cái: 👑 {room.players.find((p) => p.isCai)?.name ?? ''} ·{' '}
                 {isRua ? (
                   <>Cược {formatChips(room.config.minBet)}/người</>
@@ -152,6 +157,10 @@ export function GameTable() {
       </header>
 
       <div className="z-10 mt-2 flex justify-center">{round && <FairnessBadge round={round} />}</div>
+
+      {/* Portrait phones with a crowded arc play better sideways — a gentle,
+          dismissible nudge (no forced rotation). */}
+      {layout === 'tall' && opponents.length > 3 && <LandscapeHint />}
 
       {/* The felt */}
       <div className="felt-wrap">
@@ -195,7 +204,7 @@ export function GameTable() {
             )}
           </div>
           {opponents.map((p, i) => {
-            const { x, y } = seatXY(angles[i]!);
+            const { x, y } = seatXY(angles[i]!, layout);
             return (
               <Seat
                 key={p.id}
@@ -223,7 +232,7 @@ export function GameTable() {
 
       {/* Bottom: lobby controls, betting controls, or my hand — crossfades
           (PhaseSwap) on status changes while the felt above stays put. */}
-      <div className="z-10 flex flex-col items-center gap-3 px-4 pb-4">
+      <div className="z-10 flex flex-col items-center gap-3 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <PhaseSwap token={room.status} className="w-full">
           {lobby && openSeats > 0 && (
             <button className="invite-pill" onClick={copyLink}>
@@ -254,20 +263,38 @@ export function GameTable() {
           {reveal && !isHost && <SeatSwap />}
         </PhaseSwap>
 
-        <ReactionBar />
+        {/* On phones the corner drawer dock sits in the bottom band, so lift the
+            reaction bar above it to avoid overlap; desktop has room in the
+            corner already. */}
+        <div className="mb-14 tab:mb-0">
+          <ReactionBar />
+        </div>
       </div>
 
-      {/* Drawers: chat + history dock bottom-right so the felt owns the screen */}
-      <div className="fixed bottom-4 right-4 z-30 flex flex-col items-end gap-2">
-        <ChatPopups popups={popups} onOpen={() => setDrawer('chat')} />
-        {drawer === 'chat' && <Chat className="h-72 w-80 max-w-[calc(100vw-2rem)]" />}
+      {/* Drawers: chat + history dock bottom-right so the felt owns the screen.
+          Below `tab` they widen to a near-full-width bottom sheet; heights use
+          dvh so they track the visible viewport when mobile chrome resizes.
+          The container is pointer-events-none so its transparent full-width band
+          never intercepts taps meant for the table/reaction bar beneath it —
+          each interactive child re-enables pointer events. */}
+      <div className="px-safe pointer-events-none fixed inset-x-2 bottom-2 z-30 flex flex-col items-end gap-2 tab:inset-x-auto tab:bottom-4 tab:right-4">
+        <div className="pointer-events-auto">
+          <ChatPopups popups={popups} onOpen={() => setDrawer('chat')} />
+        </div>
+        {drawer === 'chat' && (
+          <Chat className="pointer-events-auto h-72 max-h-drawer w-full max-w-[calc(100vw-1rem)] tab:w-80" />
+        )}
         {drawer === 'history' && (
-          <div className="max-h-[60vh] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto">
+          <div className="pointer-events-auto max-h-drawer w-full max-w-[calc(100vw-1rem)] overflow-y-auto tab:w-80">
             <HistoryPanel />
           </div>
         )}
-        {drawer === 'looks' && <AppearancePanel />}
-        <div className="flex gap-2">
+        {drawer === 'looks' && (
+          <div className="pointer-events-auto">
+            <AppearancePanel />
+          </div>
+        )}
+        <div className="pointer-events-auto flex gap-2">
           {isHost && lobby && (
             <DrawerToggle
               label="⚙"
@@ -306,6 +333,28 @@ export function GameTable() {
 
       <FloatingReactions />
     </main>
+  );
+}
+
+/**
+ * Dismissible "rotate for a better view" nudge, shown on portrait phones when
+ * the seat arc is crowded. Dismissal lives for the session only (useState) —
+ * presentation-only, never persisted to game state.
+ */
+function LandscapeHint() {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <div className="z-10 mt-1 flex justify-center px-3">
+      <button
+        className="pill flex items-center gap-2 rounded-full px-3 py-1.5 text-fluid-xs text-gold-light"
+        onClick={() => setDismissed(true)}
+        title="Ẩn gợi ý"
+      >
+        ↻ Xoay ngang để chơi tốt hơn
+        <span className="text-pearl/50">✕</span>
+      </button>
+    </div>
   );
 }
 

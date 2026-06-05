@@ -5,6 +5,32 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      // Custom breakpoints layered ON TOP of Tailwind defaults (sm:640 md:768
+      // lg:1024 xl:1280 2xl:1536). `tab` is kept in lockstep with the raw
+      // `@media (max-width: 720px)` blocks in theme.css / cards.css so JSX and
+      // CSS agree on the "compact" cutover. The orientation/height `raw` screens
+      // drive the game-table layout (height is the scarce axis in landscape).
+      screens: {
+        xs: '420px',
+        tab: '720px',
+        short: { raw: '(max-height: 520px)' },
+        landscape: { raw: '(orientation: landscape)' },
+        'landscape-short': { raw: '(orientation: landscape) and (max-height: 520px)' },
+        portrait: { raw: '(orientation: portrait)' },
+      },
+      // Fluid type — values live as clamp() custom properties in theme.css :root.
+      fontSize: {
+        'fluid-xs': 'var(--fs-xs)',
+        'fluid-sm': 'var(--fs-sm)',
+        'fluid-base': 'var(--fs-base)',
+        'fluid-lg': 'var(--fs-lg)',
+        'fluid-xl': 'var(--fs-xl)',
+        'fluid-2xl': 'var(--fs-2xl)',
+        hero: 'var(--fs-hero)',
+      },
+      spacing: {
+        section: 'var(--sp-section)',
+      },
       // "Lacquer & Gold" palette — hex values mirror src/styles/theme.css :root
       // (kept as literals so Tailwind opacity modifiers like bg-gold/40 work).
       colors: {

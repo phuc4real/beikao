@@ -62,7 +62,7 @@ export function HomePage() {
   );
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 p-6">
+    <main className="mx-auto flex min-h-dvh max-w-5xl flex-col gap-section p-section">
       <Stage motif="fret" />
 
       {/* Top bar: brand + wallet (balance, nạp chip, daily gift) */}
@@ -71,14 +71,14 @@ export function HomePage() {
         <WalletPanel />
       </header>
 
-      <div className="flex flex-1 flex-col items-center gap-8">
+      <div className="flex flex-1 flex-col items-center gap-section">
         {/* Hero */}
         <div className="animate-fade-up text-center">
-          <h1 className="font-display text-4xl font-black tracking-tight text-pearl">Chọn sảnh chơi</h1>
-          <p className="mt-2 text-sm tracking-wide text-gold/85">Bài Cào · Ba Cây — ba lá định mệnh</p>
+          <h1 className="font-display text-hero font-black tracking-tight text-pearl">Chọn sảnh chơi</h1>
+          <p className="mt-2 text-fluid-sm tracking-wide text-gold/85">Bài Cào · Ba Cây — ba lá định mệnh</p>
         </div>
 
-        <Panel gilt className={`w-full space-y-4 ${tab === 'browse' ? 'max-w-2xl' : 'max-w-sm'}`}>
+        <Panel gilt className={`w-full space-y-4 ${tab === 'browse' ? 'max-w-2xl lg:max-w-4xl' : 'max-w-sm'}`}>
           <div className={`grid gap-2 ${SHOW_BROWSE ? 'grid-cols-3' : 'grid-cols-2'}`}>
             {tabBtn('create', 'Tạo phòng')}
             {tabBtn('join', 'Vào mã')}

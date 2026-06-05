@@ -14,7 +14,7 @@ const base = process.env.BASE_PATH ?? '/';
 //   npm run cf:dev                       # terminal 1: Worker + DOs + local D1 (:8788)
 //   npm run dev                          # terminal 2: Vite + HMR, proxying → :8788
 //   WORKER_ORIGIN=https://beikao.<sub>.workers.dev npm run dev   # → the live Worker
-const workerOrigin = process.env.WORKER_ORIGIN ?? 'http://127.0.0.1:8788';
+const workerOrigin = process.env.WORKER_ORIGIN ?? 'http://127.0.0.1:8787';
 
 export default defineConfig({
   base,

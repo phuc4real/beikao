@@ -48,6 +48,20 @@
   --sh-card: 0 18px 40px -12px rgba(0, 0, 0, 0.6), 0 3px 8px rgba(0, 0, 0, 0.4);
   --sh-soft: 0 10px 30px -8px rgba(0, 0, 0, 0.5);
   --gold-line: rgba(217, 178, 94, 0.5);
+
+  /* Fluid type — clamp(min, base + vw, max). Mirrored into tailwind.config.js
+     as the `text-fluid-*` / `text-hero` utilities. Apply to large display text
+     and crowded HUD labels, not wholesale to body copy. */
+  --fs-xs: clamp(0.72rem, 0.68rem + 0.2vw, 0.8rem);
+  --fs-sm: clamp(0.82rem, 0.78rem + 0.3vw, 0.92rem);
+  --fs-base: clamp(0.95rem, 0.9rem + 0.4vw, 1.05rem);
+  --fs-lg: clamp(1.1rem, 1rem + 0.6vw, 1.35rem);
+  --fs-xl: clamp(1.4rem, 1.2rem + 1.2vw, 1.9rem);
+  --fs-2xl: clamp(1.8rem, 1.4rem + 2.4vw, 2.6rem);
+  --fs-hero: clamp(2.1rem, 1.5rem + 4vw, 3.4rem);
+
+  /* Fluid section spacing — page padding / large gaps (Tailwind `*-section`). */
+  --sp-section: clamp(1.5rem, 1rem + 3vw, 3rem);
 }
 
 /* ---------- atmospheric backdrop ----------
@@ -426,6 +440,24 @@
   width: min(900px, 92%);
   aspect-ratio: 16 / 10.5;
   border-radius: 50%/40%;
+}
+/* Portrait phones: a taller capsule felt so the seat arc (the `tall` SeatLayout
+   in seatGeometry.ts) wraps seats down the sides instead of squashing them
+   across a flat top edge. */
+@media (orientation: portrait) and (max-width: 720px) {
+  .felt {
+    width: min(560px, 96%);
+    aspect-ratio: 10 / 13;
+    border-radius: 44%/30%;
+  }
+}
+/* Landscape phones are short — flatten the felt so it fills the limited height
+   rather than overflowing it. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .felt {
+    width: min(900px, calc(88vh * 16 / 9));
+    aspect-ratio: 16 / 9;
+  }
 }
 .felt-rim {
   position: absolute;

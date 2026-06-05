@@ -17,6 +17,42 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── Responsive viewport helpers ─────────────────────────────────────────
+   Each declares the static `vh` first as a fallback, then the dynamic `dvh`
+   so the layout tracks the real visible viewport when mobile browser chrome
+   (address bar) expands/collapses. Two declarations in source order — which
+   Tailwind arbitrary classes can't guarantee — so these live as utilities.
+   `viewport-fit=cover` (index.html) makes the safe-area insets meaningful. */
+@layer utilities {
+  .min-h-dvh {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  .max-h-drawer {
+    max-height: 60vh;
+    max-height: 60dvh;
+  }
+  /* Safe-area padding helpers (notches / home indicator), additive to layout. */
+  .pb-safe {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+  .px-safe {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  .pt-safe {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+}
+
+/* Landscape phones are short — let the open drawer use more of the height. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .max-h-drawer {
+    max-height: 82vh;
+    max-height: 82dvh;
+  }
+}
+
 /* ── Card animations ───────────────────────────────────────────────────── */
 
 /* "Chia bài": cards drop/scale into their seat, staggered for a dealt cascade. */
